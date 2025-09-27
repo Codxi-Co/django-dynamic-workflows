@@ -1,0 +1,38 @@
+# Include important documentation files
+include README.md
+include CHANGELOG.md
+include TRANSLATIONS.md
+include USAGE_EXAMPLES.md
+include LICENSE
+include requirements.txt
+include requirements-dev.txt
+
+# Include configuration files
+include pyproject.toml
+include pytest.ini
+
+# Include translation files
+recursive-include django_workflow_engine/locale *.po *.mo
+
+# Include templates and static files (if any)
+recursive-include django_workflow_engine/templates *
+recursive-include django_workflow_engine/static *
+
+# Include management commands
+recursive-include django_workflow_engine/management *
+
+# Exclude development and test files
+exclude sandbox/*
+exclude tests/*
+exclude .gitignore
+exclude .pytest_cache/*
+recursive-exclude * __pycache__
+recursive-exclude * *.py[co]
+recursive-exclude * *.orig
+recursive-exclude * *.rej
+recursive-exclude * *.bak
+recursive-exclude * *.swp
+recursive-exclude * *~
+recursive-exclude * .coverage
+recursive-exclude * .tox
+recursive-exclude * .DS_Store

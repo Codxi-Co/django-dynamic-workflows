@@ -1,0 +1,255 @@
+# English translations for django-workflow-engine
+# Copyright (C) 2024
+# This file is distributed under the same license as the django-workflow-engine package.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: django-workflow-engine\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-01-01 12:00+0000\n"
+"PO-Revision-Date: 2024-01-01 12:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: English\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# Model verbose names and help texts
+msgid "Workflow"
+msgstr "Workflow"
+
+msgid "Workflows"
+msgstr "Workflows"
+
+msgid "Pipeline"
+msgstr "Pipeline"
+
+msgid "Pipelines"
+msgstr "Pipelines"
+
+msgid "Stage"
+msgstr "Stage"
+
+msgid "Stages"
+msgstr "Stages"
+
+msgid "Workflow Attachment"
+msgstr "Workflow Attachment"
+
+msgid "Workflow Attachments"
+msgstr "Workflow Attachments"
+
+msgid "Workflow Configuration"
+msgstr "Workflow Configuration"
+
+msgid "Workflow Configurations"
+msgstr "Workflow Configurations"
+
+msgid "Workflow Action"
+msgstr "Workflow Action"
+
+msgid "Workflow Actions"
+msgstr "Workflow Actions"
+
+# Field labels
+msgid "Name (English)"
+msgstr "Name (English)"
+
+msgid "Name (Arabic)"
+msgstr "Name (Arabic)"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Status"
+msgstr "Status"
+
+msgid "Order"
+msgstr "Order"
+
+msgid "Is Active"
+msgstr "Is Active"
+
+msgid "Created By"
+msgstr "Created By"
+
+msgid "Created At"
+msgstr "Created At"
+
+msgid "Updated At"
+msgstr "Updated At"
+
+msgid "Company"
+msgstr "Company"
+
+msgid "Department"
+msgstr "Department"
+
+# Status choices
+msgid "Draft"
+msgstr "Draft"
+
+msgid "Active"
+msgstr "Active"
+
+msgid "Inactive"
+msgstr "Inactive"
+
+msgid "Archived"
+msgstr "Archived"
+
+msgid "Not Started"
+msgstr "Not Started"
+
+msgid "In Progress"
+msgstr "In Progress"
+
+msgid "Completed"
+msgstr "Completed"
+
+msgid "Rejected"
+msgstr "Rejected"
+
+msgid "Cancelled"
+msgstr "Cancelled"
+
+# Action types
+msgid "Before Start"
+msgstr "Before Start"
+
+msgid "After Start"
+msgstr "After Start"
+
+msgid "Before Approve"
+msgstr "Before Approve"
+
+msgid "After Approve"
+msgstr "After Approve"
+
+msgid "Before Reject"
+msgstr "Before Reject"
+
+msgid "After Reject"
+msgstr "After Reject"
+
+msgid "Before Move Stage"
+msgstr "Before Move Stage"
+
+msgid "After Move Stage"
+msgstr "After Move Stage"
+
+msgid "Before Move Pipeline"
+msgstr "Before Move Pipeline"
+
+msgid "After Move Pipeline"
+msgstr "After Move Pipeline"
+
+msgid "Before Complete"
+msgstr "Before Complete"
+
+msgid "After Complete"
+msgstr "After Complete"
+
+# Serializer messages
+msgid "Action to perform on the workflow stage"
+msgstr "Action to perform on the workflow stage"
+
+msgid "Reason for rejection, delegation, or resubmission"
+msgstr "Reason for rejection, delegation, or resubmission"
+
+msgid "Form data for approval (if required by stage)"
+msgstr "Form data for approval (if required by stage)"
+
+msgid "User ID for delegation (required for delegation action)"
+msgstr "User ID for delegation (required for delegation action)"
+
+msgid "Stage ID for resubmission (required for resubmission action)"
+msgstr "Stage ID for resubmission (required for resubmission action)"
+
+# Validation messages
+msgid "Object instance is required for workflow approval"
+msgstr "Object instance is required for workflow approval"
+
+msgid "No workflow attached to this object"
+msgstr "No workflow attached to this object"
+
+msgid "Workflow is not in progress (current status: {status})"
+msgstr "Workflow is not in progress (current status: {status})"
+
+msgid "No current approval step found for this object"
+msgstr "No current approval step found for this object"
+
+msgid "Reason is required for rejection"
+msgstr "Reason is required for rejection"
+
+msgid "Reason is required for resubmission"
+msgstr "Reason is required for resubmission"
+
+msgid "Stage does not belong to current workflow"
+msgstr "Stage does not belong to current workflow"
+
+msgid "Invalid stage ID"
+msgstr "Invalid stage ID"
+
+msgid "Invalid user ID"
+msgstr "Invalid user ID"
+
+# Service messages
+msgid "Workflow '{name}' is not active and cannot be attached"
+msgstr "Workflow '{name}' is not active and cannot be attached"
+
+msgid "No workflow attachment found for object"
+msgstr "No workflow attachment found for object"
+
+msgid "Workflow '{name}' attached to {object}"
+msgstr "Workflow '{name}' attached to {object}"
+
+msgid "Workflow '{name}' updated for {object}"
+msgstr "Workflow '{name}' updated for {object}"
+
+# Log messages
+msgid "Workflow created"
+msgstr "Workflow created"
+
+msgid "Workflow attached"
+msgstr "Workflow attached"
+
+msgid "Workflow started"
+msgstr "Workflow started"
+
+msgid "Stage moved"
+msgstr "Stage moved"
+
+msgid "Workflow completed"
+msgstr "Workflow completed"
+
+msgid "Workflow rejected"
+msgstr "Workflow rejected"
+
+# Email templates
+msgid "Workflow Approval Required"
+msgstr "Workflow Approval Required"
+
+msgid "Workflow Approved"
+msgstr "Workflow Approved"
+
+msgid "Workflow Rejected"
+msgstr "Workflow Rejected"
+
+msgid "Workflow Completed"
+msgstr "Workflow Completed"
+
+msgid "Your approval is required for the workflow: {workflow_name}"
+msgstr "Your approval is required for the workflow: {workflow_name}"
+
+msgid "The workflow {workflow_name} has been approved and moved to the next stage."
+msgstr "The workflow {workflow_name} has been approved and moved to the next stage."
+
+msgid "The workflow {workflow_name} has been rejected with reason: {reason}"
+msgstr "The workflow {workflow_name} has been rejected with reason: {reason}"
+
+msgid "The workflow {workflow_name} has been completed successfully."
+msgstr "The workflow {workflow_name} has been completed successfully."

@@ -1,0 +1,9 @@
+-r requirements.txt
+pytest
+pytest-django
+factory-boy
+coverage
+black
+isort
+flake8
+djangorestframework

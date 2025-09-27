@@ -1,0 +1,255 @@
+# Arabic translations for django-workflow-engine
+# Copyright (C) 2024
+# This file is distributed under the same license as the django-workflow-engine package.
+#
+#, fuzzy
+msgid ""
+msgstr ""
+"Project-Id-Version: django-workflow-engine\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2024-01-01 12:00+0000\n"
+"PO-Revision-Date: 2024-01-01 12:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: Arabic\n"
+"Language: ar\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=6; plural=n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5;\n"
+
+# Model verbose names and help texts
+msgid "Workflow"
+msgstr "سير العمل"
+
+msgid "Workflows"
+msgstr "سير العمل"
+
+msgid "Pipeline"
+msgstr "خط الأنابيب"
+
+msgid "Pipelines"
+msgstr "خطوط الأنابيب"
+
+msgid "Stage"
+msgstr "المرحلة"
+
+msgid "Stages"
+msgstr "المراحل"
+
+msgid "Workflow Attachment"
+msgstr "مرفق سير العمل"
+
+msgid "Workflow Attachments"
+msgstr "مرفقات سير العمل"
+
+msgid "Workflow Configuration"
+msgstr "إعداد سير العمل"
+
+msgid "Workflow Configurations"
+msgstr "إعدادات سير العمل"
+
+msgid "Workflow Action"
+msgstr "إجراء سير العمل"
+
+msgid "Workflow Actions"
+msgstr "إجراءات سير العمل"
+
+# Field labels
+msgid "Name (English)"
+msgstr "الاسم (إنجليزي)"
+
+msgid "Name (Arabic)"
+msgstr "الاسم (عربي)"
+
+msgid "Description"
+msgstr "الوصف"
+
+msgid "Status"
+msgstr "الحالة"
+
+msgid "Order"
+msgstr "الترتيب"
+
+msgid "Is Active"
+msgstr "نشط"
+
+msgid "Created By"
+msgstr "أنشأ بواسطة"
+
+msgid "Created At"
+msgstr "تاريخ الإنشاء"
+
+msgid "Updated At"
+msgstr "تاريخ التحديث"
+
+msgid "Company"
+msgstr "الشركة"
+
+msgid "Department"
+msgstr "القسم"
+
+# Status choices
+msgid "Draft"
+msgstr "مسودة"
+
+msgid "Active"
+msgstr "نشط"
+
+msgid "Inactive"
+msgstr "غير نشط"
+
+msgid "Archived"
+msgstr "مؤرشف"
+
+msgid "Not Started"
+msgstr "لم يبدأ"
+
+msgid "In Progress"
+msgstr "قيد التنفيذ"
+
+msgid "Completed"
+msgstr "مكتمل"
+
+msgid "Rejected"
+msgstr "مرفوض"
+
+msgid "Cancelled"
+msgstr "ملغي"
+
+# Action types
+msgid "Before Start"
+msgstr "قبل البدء"
+
+msgid "After Start"
+msgstr "بعد البدء"
+
+msgid "Before Approve"
+msgstr "قبل الموافقة"
+
+msgid "After Approve"
+msgstr "بعد الموافقة"
+
+msgid "Before Reject"
+msgstr "قبل الرفض"
+
+msgid "After Reject"
+msgstr "بعد الرفض"
+
+msgid "Before Move Stage"
+msgstr "قبل انتقال المرحلة"
+
+msgid "After Move Stage"
+msgstr "بعد انتقال المرحلة"
+
+msgid "Before Move Pipeline"
+msgstr "قبل انتقال خط الأنابيب"
+
+msgid "After Move Pipeline"
+msgstr "بعد انتقال خط الأنابيب"
+
+msgid "Before Complete"
+msgstr "قبل الإكمال"
+
+msgid "After Complete"
+msgstr "بعد الإكمال"
+
+# Serializer messages
+msgid "Action to perform on the workflow stage"
+msgstr "الإجراء المطلوب تنفيذه على مرحلة سير العمل"
+
+msgid "Reason for rejection, delegation, or resubmission"
+msgstr "سبب الرفض أو التفويض أو إعادة التقديم"
+
+msgid "Form data for approval (if required by stage)"
+msgstr "بيانات النموذج للموافقة (إذا كانت مطلوبة من قبل المرحلة)"
+
+msgid "User ID for delegation (required for delegation action)"
+msgstr "معرف المستخدم للتفويض (مطلوب لإجراء التفويض)"
+
+msgid "Stage ID for resubmission (required for resubmission action)"
+msgstr "معرف المرحلة لإعادة التقديم (مطلوب لإجراء إعادة التقديم)"
+
+# Validation messages
+msgid "Object instance is required for workflow approval"
+msgstr "مطلوب كائن للموافقة على سير العمل"
+
+msgid "No workflow attached to this object"
+msgstr "لا يوجد سير عمل مرفق بهذا الكائن"
+
+msgid "Workflow is not in progress (current status: {status})"
+msgstr "سير العمل ليس قيد التنفيذ (الحالة الحالية: {status})"
+
+msgid "No current approval step found for this object"
+msgstr "لا توجد خطوة موافقة حالية لهذا الكائن"
+
+msgid "Reason is required for rejection"
+msgstr "السبب مطلوب للرفض"
+
+msgid "Reason is required for resubmission"
+msgstr "السبب مطلوب لإعادة التقديم"
+
+msgid "Stage does not belong to current workflow"
+msgstr "المرحلة لا تنتمي إلى سير العمل الحالي"
+
+msgid "Invalid stage ID"
+msgstr "معرف مرحلة غير صحيح"
+
+msgid "Invalid user ID"
+msgstr "معرف مستخدم غير صحيح"
+
+# Service messages
+msgid "Workflow '{name}' is not active and cannot be attached"
+msgstr "سير العمل '{name}' غير نشط ولا يمكن إرفاقه"
+
+msgid "No workflow attachment found for object"
+msgstr "لم يتم العثور على مرفق سير عمل للكائن"
+
+msgid "Workflow '{name}' attached to {object}"
+msgstr "تم إرفاق سير العمل '{name}' بـ {object}"
+
+msgid "Workflow '{name}' updated for {object}"
+msgstr "تم تحديث سير العمل '{name}' لـ {object}"
+
+# Log messages
+msgid "Workflow created"
+msgstr "تم إنشاء سير العمل"
+
+msgid "Workflow attached"
+msgstr "تم إرفاق سير العمل"
+
+msgid "Workflow started"
+msgstr "تم بدء سير العمل"
+
+msgid "Stage moved"
+msgstr "تم انتقال المرحلة"
+
+msgid "Workflow completed"
+msgstr "تم إكمال سير العمل"
+
+msgid "Workflow rejected"
+msgstr "تم رفض سير العمل"
+
+# Email templates
+msgid "Workflow Approval Required"
+msgstr "مطلوب موافقة سير العمل"
+
+msgid "Workflow Approved"
+msgstr "تم الموافقة على سير العمل"
+
+msgid "Workflow Rejected"
+msgstr "تم رفض سير العمل"
+
+msgid "Workflow Completed"
+msgstr "تم إكمال سير العمل"
+
+msgid "Your approval is required for the workflow: {workflow_name}"
+msgstr "موافقتك مطلوبة لسير العمل: {workflow_name}"
+
+msgid "The workflow {workflow_name} has been approved and moved to the next stage."
+msgstr "تم الموافقة على سير العمل {workflow_name} ونقله إلى المرحلة التالية."
+
+msgid "The workflow {workflow_name} has been rejected with reason: {reason}"
+msgstr "تم رفض سير العمل {workflow_name} للسبب: {reason}"
+
+msgid "The workflow {workflow_name} has been completed successfully."
+msgstr "تم إكمال سير العمل {workflow_name} بنجاح."
