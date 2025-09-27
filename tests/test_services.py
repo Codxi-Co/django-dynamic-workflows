@@ -1,5 +1,6 @@
 """Test cases for workflow engine services."""
 
+import uuid
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
@@ -48,6 +49,12 @@ class WorkflowServicesTest(TestCase):
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         self.company = Company.objects.create(name="Test Company")
         self.department = Department.objects.create(
             name="Test Department", company=self.company
@@ -55,7 +62,7 @@ class WorkflowServicesTest(TestCase):
 
         # Create complete workflow structure
         self.workflow = WorkFlow.objects.create(
-            company=self.company,
+            company=self.company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -64,17 +71,16 @@ class WorkflowServicesTest(TestCase):
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=self.department.id,
             created_by=self.user,
             order=0,
         )
 
         self.stage1 = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Stage 1",
             name_ar="المرحلة 1",
             created_by=self.user,
@@ -84,7 +90,7 @@ class WorkflowServicesTest(TestCase):
 
         self.stage2 = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Stage 2",
             name_ar="المرحلة 2",
             created_by=self.user,
@@ -123,14 +129,14 @@ class WorkflowServicesTest(TestCase):
         mock_build_steps.return_value = [{"step": 1}]
 
         # Start the workflow
-        updated_attachment = start_workflow_for_object(self.user, self.user)
+        modified_attachment = start_workflow_for_object(self.user, self.user)
 
         self.assertEqual(
-            updated_attachment.status, WorkflowAttachmentStatus.IN_PROGRESS
+            modified_attachment.status, WorkflowAttachmentStatus.IN_PROGRESS
         )
-        self.assertEqual(updated_attachment.current_stage, self.stage1)
-        self.assertEqual(updated_attachment.current_pipeline, self.pipeline)
-        self.assertIsNotNone(updated_attachment.started_at)
+        self.assertEqual(modified_attachment.current_stage, self.stage1)
+        self.assertEqual(modified_attachment.current_pipeline, self.pipeline)
+        self.assertIsNotNone(modified_attachment.started_at)
 
         # Verify approval flow was started
         mock_start_flow.assert_called_once()
@@ -151,9 +157,9 @@ class WorkflowServicesTest(TestCase):
         mock_build_steps.return_value = [{"step": 2}]
 
         # Move to next stage
-        updated_attachment = move_to_next_stage(self.user, self.user)
+        modified_attachment = move_to_next_stage(self.user, self.user)
 
-        self.assertEqual(updated_attachment.current_stage, self.stage2)
+        self.assertEqual(modified_attachment.current_stage, self.stage2)
         mock_start_flow.assert_called_once()
 
     def test_reject_workflow_stage(self):
@@ -167,14 +173,14 @@ class WorkflowServicesTest(TestCase):
         attachment.save()
 
         # Reject workflow
-        updated_attachment = reject_workflow_stage(
+        modified_attachment = reject_workflow_stage(
             obj=self.user, stage=self.stage1, user=self.user, reason="Not approved"
         )
 
-        self.assertEqual(updated_attachment.status, WorkflowAttachmentStatus.REJECTED)
-        self.assertIsNotNone(updated_attachment.completed_at)
+        self.assertEqual(modified_attachment.status, WorkflowAttachmentStatus.REJECTED)
+        self.assertIsNotNone(modified_attachment.completed_at)
         self.assertEqual(
-            updated_attachment.metadata["rejection_reason"], "Not approved"
+            modified_attachment.metadata["rejection_reason"], "Not approved"
         )
 
     def test_complete_workflow(self):
@@ -187,10 +193,10 @@ class WorkflowServicesTest(TestCase):
         attachment.save()
 
         # Complete workflow
-        updated_attachment = complete_workflow(self.user, self.user)
+        modified_attachment = complete_workflow(self.user, self.user)
 
-        self.assertEqual(updated_attachment.status, WorkflowAttachmentStatus.COMPLETED)
-        self.assertIsNotNone(updated_attachment.completed_at)
+        self.assertEqual(modified_attachment.status, WorkflowAttachmentStatus.COMPLETED)
+        self.assertIsNotNone(modified_attachment.completed_at)
 
     def test_register_model_for_workflow(self):
         """Test registering model for workflow functionality."""
@@ -240,6 +246,12 @@ class WorkflowActionServicesTest(TestCase):
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         self.company = Company.objects.create(name="Test Company")
         self.department = Department.objects.create(
             name="Test Department", company=self.company
@@ -247,7 +259,7 @@ class WorkflowActionServicesTest(TestCase):
 
         # Create workflow structure
         self.workflow = WorkFlow.objects.create(
-            company=self.company,
+            company=self.company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -256,17 +268,16 @@ class WorkflowActionServicesTest(TestCase):
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=self.department.id,
             created_by=self.user,
             order=0,
         )
 
         self.stage = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Stage",
             name_ar="مرحلة تجريبية",
             created_by=self.user,
@@ -382,10 +393,16 @@ class TestApprovalWorkflowIntegration:
         )
 
         # Create workflow structure
+        unique_id = str(uuid.uuid4())[:8]
+        company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         company = Company.objects.create(name="Test Company")
         department = Department.objects.create(name="Test Department", company=company)
         workflow = WorkFlow.objects.create(
-            company=company,
+            company=company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -394,16 +411,15 @@ class TestApprovalWorkflowIntegration:
 
         pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=company,
+            company=company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=department.id,
             created_by=user,
         )
 
         stage = Stage.objects.create(
             pipeline=pipeline,
-            company=company,
+            company=company_user,
             name_en="Test Stage",
             name_ar="مرحلة تجريبية",
             created_by=user,
@@ -461,11 +477,17 @@ class TestApprovalWorkflowIntegration:
         )
 
         # Create workflow and attachment
+        unique_id = str(uuid.uuid4())[:8]
+        company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         company = Company.objects.create(name="Test Company")
         department = Department.objects.create(name="Test Department", company=company)
 
         workflow = WorkFlow.objects.create(
-            company=company,
+            company=company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -474,16 +496,15 @@ class TestApprovalWorkflowIntegration:
 
         pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=company,
+            company=company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=department.id,
             created_by=user,
         )
 
         stage = Stage.objects.create(
             pipeline=pipeline,
-            company=company,
+            company=company_user,
             name_en="Test Stage",
             name_ar="مرحلة تجريبية",
             is_active=True,

@@ -1,5 +1,6 @@
 """Integration tests demonstrating complete workflow with django-approval-workflow."""
 
+import uuid
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
@@ -63,6 +64,12 @@ class TestCompleteWorkflowIntegration:
         test_object = creator  # Using User as test object
 
         # Step 1: Create workflow structure
+        unique_id = str(uuid.uuid4())[:8]
+        company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         company = Company.objects.create(name="Test Company")
         hr_department = Department.objects.create(name="HR Department", company=company)
         finance_department = Department.objects.create(
@@ -70,7 +77,7 @@ class TestCompleteWorkflowIntegration:
         )
 
         workflow = WorkFlow.objects.create(
-            company=company,
+            company=company_user,
             name_en="Document Approval Workflow",
             name_ar="سير عمل الموافقة على الوثائق",
             status=WorkflowStatus.ACTIVE,
@@ -80,20 +87,18 @@ class TestCompleteWorkflowIntegration:
         # Create two pipelines
         hr_pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=company,
+            company=company_user,
             name_en="HR Review",
             name_ar="مراجعة الموارد البشرية",
-            department_id=hr_department.id,
             created_by=creator,
             order=0,
         )
 
         finance_pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=company,
+            company=company_user,
             name_en="Finance Approval",
             name_ar="موافقة المالية",
-            department_id=finance_department.id,
             created_by=creator,
             order=1,
         )
@@ -101,7 +106,7 @@ class TestCompleteWorkflowIntegration:
         # Create stages for HR pipeline
         hr_stage1 = Stage.objects.create(
             pipeline=hr_pipeline,
-            company=company,
+            company=company_user,
             name_en="Initial HR Review",
             name_ar="المراجعة الأولية للموارد البشرية",
             created_by=creator,
@@ -119,7 +124,7 @@ class TestCompleteWorkflowIntegration:
 
         hr_stage2 = Stage.objects.create(
             pipeline=hr_pipeline,
-            company=company,
+            company=company_user,
             name_en="HR Manager Approval",
             name_ar="موافقة مدير الموارد البشرية",
             created_by=creator,
@@ -137,7 +142,7 @@ class TestCompleteWorkflowIntegration:
         # Create stage for Finance pipeline
         finance_stage = Stage.objects.create(
             pipeline=finance_pipeline,
-            company=company,
+            company=company_user,
             name_en="Finance Review",
             name_ar="مراجعة المالية",
             created_by=creator,
@@ -216,12 +221,12 @@ class TestCompleteWorkflowIntegration:
             ]
 
             # Start workflow
-            updated_attachment = start_workflow_for_object(test_object, creator)
+            modified_attachment = start_workflow_for_object(test_object, creator)
 
-            assert updated_attachment.status == WorkflowAttachmentStatus.IN_PROGRESS
-            assert updated_attachment.current_stage == hr_stage1
-            assert updated_attachment.current_pipeline == hr_pipeline
-            assert updated_attachment.started_by == creator
+            assert modified_attachment.status == WorkflowAttachmentStatus.IN_PROGRESS
+            assert modified_attachment.current_stage == hr_stage1
+            assert modified_attachment.current_pipeline == hr_pipeline
+            assert modified_attachment.started_by == creator
 
         # Step 6: Verify approval flow was created
         content_type = ContentType.objects.get_for_model(User)
@@ -276,14 +281,14 @@ class TestCompleteWorkflowIntegration:
                 "django_workflow_engine.services.trigger_workflow_event"
             ) as mock_trigger:
                 # Simulate final approval
-                updated_attachment.current_stage = hr_stage2
-                mock_move.return_value = updated_attachment
+                modified_attachment.current_stage = hr_stage2
+                mock_move.return_value = modified_attachment
 
                 handler.on_final_approve(approval_instance)
 
                 # Verify actions were triggered
                 mock_trigger.assert_called_with(
-                    updated_attachment,
+                    modified_attachment,
                     ActionType.AFTER_APPROVE,
                     approval_instance=approval_instance,
                     user=approver1,
@@ -410,11 +415,17 @@ class TestCompleteWorkflowIntegration:
             username="testuser", email="test@example.com", password="testpass123"
         )
 
+        unique_id = str(uuid.uuid4())[:8]
+        company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         company = Company.objects.create(name="Test Company")
         department = Department.objects.create(name="Test Department", company=company)
 
         workflow = WorkFlow.objects.create(
-            company=company,
+            company=company_user,
             name_en="Custom Action Workflow",
             name_ar="سير عمل الإجراءات المخصصة",
             status=WorkflowStatus.ACTIVE,
@@ -423,16 +434,15 @@ class TestCompleteWorkflowIntegration:
 
         pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=company,
+            company=company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=department.id,
             created_by=user,
         )
 
         stage = Stage.objects.create(
             pipeline=pipeline,
-            company=company,
+            company=company_user,
             name_en="Test Stage",
             name_ar="مرحلة تجريبية",
             created_by=user,
@@ -519,6 +529,12 @@ class WorkflowConfigurationIntegrationTest(TestCase):
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
 
     def test_model_registration_workflow_integration(self):
         """Test model registration with django-approval-workflow integration."""
@@ -526,7 +542,7 @@ class WorkflowConfigurationIntegrationTest(TestCase):
         department = Department.objects.create(name="Test Department", company=company)
 
         workflow = WorkFlow.objects.create(
-            company=company,
+            company=self.company_user,
             name_en="Default User Workflow",
             name_ar="سير عمل المستخدم الافتراضي",
             status=WorkflowStatus.ACTIVE,
@@ -535,16 +551,15 @@ class WorkflowConfigurationIntegrationTest(TestCase):
 
         pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=company,
+            company=self.company_user,
             name_en="User Processing",
             name_ar="معالجة المستخدم",
-            department_id=department.id,
             created_by=self.user,
         )
 
         Stage.objects.create(
             pipeline=pipeline,
-            company=company,
+            company=self.company_user,
             name_en="User Verification",
             name_ar="التحقق من المستخدم",
             created_by=self.user,

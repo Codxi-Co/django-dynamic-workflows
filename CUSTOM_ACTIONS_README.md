@@ -121,7 +121,7 @@ def update_external_system_after_move_stage(context, parameters=None):
         'workflow_id': attachment.workflow.id,
         'from_stage': from_stage.name_en if from_stage else None,
         'to_stage': to_stage.name_en,
-        'timestamp': attachment.updated_at.isoformat()
+        'timestamp': attachment.modified_at.isoformat()
     }
 
     response = requests.post(

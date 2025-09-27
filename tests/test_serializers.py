@@ -1,5 +1,6 @@
 """Test cases for workflow serializers."""
 
+import uuid
 from unittest.mock import Mock, patch
 
 from django.contrib.auth import get_user_model
@@ -26,6 +27,12 @@ class WorkflowApprovalSerializerTest(TestCase):
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         self.company = Company.objects.create(name="Test Company")
         self.department = Department.objects.create(
             name="Test Department", company=self.company
@@ -33,7 +40,7 @@ class WorkflowApprovalSerializerTest(TestCase):
 
         # Create workflow structure
         self.workflow = WorkFlow.objects.create(
-            company=self.company,
+            company=self.company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -42,16 +49,15 @@ class WorkflowApprovalSerializerTest(TestCase):
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=self.department.id,
             created_by=self.user,
         )
 
         self.stage1 = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Stage 1",
             name_ar="المرحلة 1",
             created_by=self.user,
@@ -61,7 +67,7 @@ class WorkflowApprovalSerializerTest(TestCase):
 
         self.stage2 = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Stage 2",
             name_ar="المرحلة 2",
             created_by=self.user,
@@ -346,11 +352,17 @@ class TestSerializerIntegrationWithApprovalWorkflow:
             username="testuser", email="test@example.com", password="testpass123"
         )
 
+        unique_id = str(uuid.uuid4())[:8]
+        company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         company = Company.objects.create(name="Test Company")
         department = Department.objects.create(name="Test Department", company=company)
 
         workflow = WorkFlow.objects.create(
-            company=company,
+            company=company_user,
             name_en="Integration Test Workflow",
             name_ar="سير عمل اختبار التكامل",
             status=WorkflowStatus.ACTIVE,
@@ -359,16 +371,15 @@ class TestSerializerIntegrationWithApprovalWorkflow:
 
         pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=company,
+            company=company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=department.id,
             created_by=user,
         )
 
         stage = Stage.objects.create(
             pipeline=pipeline,
-            company=company,
+            company=company_user,
             name_en="Review Stage",
             name_ar="مرحلة المراجعة",
             created_by=user,

@@ -55,7 +55,7 @@ class WorkFlowFactory(DjangoModelFactory):
 
     name_en = factory.Sequence(lambda n: f"Workflow {n}")
     name_ar = factory.LazyAttribute(lambda obj: f"سير العمل {obj.name_en.split()[-1]}")
-    company = factory.SubFactory(CompanyFactory)
+    company = factory.SubFactory(UserFactory)
     is_active = True
     description = factory.Faker("text", max_nb_chars=200)
 
@@ -140,12 +140,13 @@ class CompleteWorkflowFactory(WorkFlowFactory):
             return
 
         # Create Finance Pipeline with 3 stages
+        finance_department = DepartmentFactory(name="Finance Department")
         finance_pipeline = PipelineFactory(
             workflow=obj,
             name_en="Finance Review",
             name_ar="مراجعة مالية",
             order=1,
-            department__name="Finance Department",
+            department=finance_department,
         )
 
         # Finance stages
@@ -203,12 +204,13 @@ class CompleteWorkflowFactory(WorkFlowFactory):
         )
 
         # Create Management Pipeline with 1 stage
+        management_department = DepartmentFactory(name="Management Department")
         management_pipeline = PipelineFactory(
             workflow=obj,
             name_en="Executive Approval",
             name_ar="موافقة تنفيذية",
             order=2,
-            department__name="Management Department",
+            department=management_department,
         )
 
         # Management stage

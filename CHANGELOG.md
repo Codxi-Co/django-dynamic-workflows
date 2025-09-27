@@ -5,10 +5,39 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.3] - 2025-09-27
+
+### 🔧 Model Updates
+- Allowed `null=True` on timestamp and related fields to improve migration flexibility
+- Ensures smoother installation on existing databases without requiring defaults
+
+### 🛠 Migration Notes
+- If upgrading from `1.0.2`, run migrations to apply the `null=True` changes
+- New installs are not affected
+
+---
+
+## [1.0.2] - 2025-07-15
+
+### 🚀 Enhancements
+- **Refactored Department** to be fully generic and non-blocking for developer usage
+- **Updated Company model**: defaults to `AUTH_USER_MODEL` for better integration
+- **Optimized service helpers**: added utilities such as `get_detailed_workflow_data` with focus on performance
+- **Developer support APIs**: ready-made endpoints to simplify implementation and accelerate onboarding
+
+### 🛠 Technical Improvements
+- Refined model structure for clarity and future-proofing
+- Improved separation between workflow orchestration and developer integration layers
+
+### 📋 Migration Notes
+- Fully backward compatible
+- Developers can now use generic departments without schema changes
+
+---
+
 ## [1.0.1] - 2024-12-27
 
 ### 🎉 Production-Ready Release
-
 This release marks the completion of extensive testing, optimization, and internationalization work, making django-dynamic-workflows fully production-ready for enterprise deployment.
 
 ### ✅ Test Coverage & Quality Improvements
@@ -72,6 +101,8 @@ Successfully tested for:
 - High-volume workflow processing
 - International deployments requiring Arabic/English support
 - Complex approval processes with multiple stages
+
+---
 
 ## [1.0.0] - 2024-09-26
 

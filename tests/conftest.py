@@ -1,5 +1,6 @@
 """Test configuration and fixtures for speeding up tests."""
 
+import uuid
 from unittest.mock import Mock, patch
 
 import pytest
@@ -39,11 +40,21 @@ def fast_workflow_factory():
     from sandbox.testapp.models import Company, Department
 
     def create_workflow(user, name="Test Workflow"):
+        from django.contrib.auth import get_user_model
+
+        User = get_user_model()
+
+        unique_id = str(uuid.uuid4())[:8]
+        company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         company = Company.objects.create(name="Test Company")
         department = Department.objects.create(name="Test Department", company=company)
 
         workflow = WorkFlow.objects.create(
-            company=company,
+            company=company_user,
             name_en=name,
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -52,16 +63,15 @@ def fast_workflow_factory():
 
         pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=company,
+            company=company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=department.id,
             created_by=user,
         )
 
         stage = Stage.objects.create(
             pipeline=pipeline,
-            company=company,
+            company=company_user,
             name_en="Test Stage",
             name_ar="مرحلة تجريبية",
             created_by=user,
@@ -75,6 +85,7 @@ def fast_workflow_factory():
             "pipeline": pipeline,
             "stage": stage,
             "company": company,
+            "company_user": company_user,
             "department": department,
         }
 

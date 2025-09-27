@@ -21,21 +21,21 @@ from .choices import ActionType, WorkflowAttachmentStatus, WorkflowStatus
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
-# Get model references from settings or use defaults
-COMPANY_MODEL = getattr(settings, "WORKFLOW_COMPANY_MODEL", "testapp.Company")
-DEPARTMENT_MODEL = getattr(settings, "WORKFLOW_DEPARTMENT_MODEL", "testapp.Department")
-
 
 class BaseCompanyModel(models.Model):
     """Base model for company-scoped models."""
 
+    # Optional company field - uses User model for company association
     company = models.ForeignKey(
-        COMPANY_MODEL,
-        on_delete=models.CASCADE,
-        help_text="Company this record belongs to",
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="%(class)s_company",
+        help_text="Company/Organization user that owns this workflow",
     )
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    modified_at = models.DateTimeField(auto_now=True, null=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -86,7 +86,10 @@ class CompanyBaseWithNamedModelWithClone(CompanyBaseWithNamedModel):
 
         # Copy all field values
         for field in self._meta.fields:
-            if not field.primary_key and field.name not in ["created_at", "updated_at"]:
+            if not field.primary_key and field.name not in [
+                "created_at",
+                "modified_at",
+            ]:
                 value = getattr(self, field.name)
                 if field.name in modified_keys:
                     if field.name in ["name_en", "name_ar"] and value:
@@ -124,7 +127,7 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
     )
 
     class Meta:
-        unique_together = [("company", "name_en"), ("company", "name_ar")]
+        # Remove company-based unique constraints since company is now optional
         ordering = ("-id",)
         verbose_name = _("Workflow")
         verbose_name_plural = _("Workflows")
@@ -216,15 +219,44 @@ class Pipeline(CompanyBaseWithNamedModelWithClone):
     workflow = models.ForeignKey(
         WorkFlow, on_delete=models.CASCADE, related_name="pipelines"
     )
-    department = models.ForeignKey(
-        DEPARTMENT_MODEL, on_delete=models.PROTECT, related_name="pipelines"
+    # Generic department field - can be mapped to any model via settings
+    department_content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        help_text="Content type of the department model",
     )
+    department_object_id = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text="ID of the department object",
+    )
+    department = GenericForeignKey("department_content_type", "department_object_id")
     order = models.PositiveIntegerField(
         default=0, help_text="Order of this pipeline in the workflow"
     )
 
+    @property
+    def department_name(self):
+        """Get department name from the generic foreign key."""
+        if not self.department:
+            return None
+
+        # Try common name attributes
+        for attr in ["name", "title", "department_name", "__str__"]:
+            if hasattr(self.department, attr):
+                if attr == "__str__":
+                    return str(self.department)
+                value = getattr(self.department, attr)
+                if value:
+                    return value
+
+        # Fallback to string representation
+        return str(self.department)
+
     class Meta:
-        unique_together = [("company", "name_en"), ("company", "name_ar")]
+        # Remove company-based unique constraints since company is now optional
         ordering = ("order", "id")
 
 
@@ -357,8 +389,8 @@ class WorkflowAttachment(models.Model):
         default=dict, blank=True, help_text="Additional metadata for workflow execution"
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    modified_at = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         unique_together = [("content_type", "object_id")]
@@ -496,8 +528,8 @@ class WorkflowConfiguration(models.Model):
         help_text="Field name on the model to store current stage",
     )
 
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    modified_at = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         verbose_name = "Workflow Configuration"
@@ -565,8 +597,8 @@ class WorkflowAction(models.Model):
     )
 
     # Metadata
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    modified_at = models.DateTimeField(auto_now=True, null=True)
 
     class Meta:
         verbose_name = "Workflow Action"
@@ -637,7 +669,3 @@ class WorkflowAction(models.Model):
         elif self.workflow:
             return self.workflow
         return None
-
-
-# Note: ApprovalFlow and ApprovalInstance models are imported from django-approval-workflow package
-# This package focuses only on workflow management (WorkFlow, Pipeline, Stage) models

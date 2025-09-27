@@ -35,6 +35,10 @@ class DefaultActionsTest(TestCase):
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
+        # Create a company user that represents the organization
+        self.company_user = User.objects.create_user(
+            username="testcompany", email="company@example.com", password="testpass123"
+        )
         self.company = Company.objects.create(name="Test Company")
         self.department = Department.objects.create(
             name="Test Department", company=self.company
@@ -43,9 +47,9 @@ class DefaultActionsTest(TestCase):
             name="Second Department", company=self.company
         )
 
-        # Create workflow structure
+        # Create workflow structure with company_user instead of company
         self.workflow = WorkFlow.objects.create(
-            company=self.company,
+            company=self.company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -54,16 +58,18 @@ class DefaultActionsTest(TestCase):
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=self.department.id,
             created_by=self.user,
         )
+        # Set department using GenericForeignKey
+        self.pipeline.department = self.department
+        self.pipeline.save()
 
         self.stage = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Stage",
             name_ar="مرحلة تجريبية",
             is_active=True,
@@ -139,7 +145,7 @@ class DefaultActionsTest(TestCase):
 
         stage2 = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Review Stage",
             name_ar="مرحلة المراجعة",
             created_by=self.user,
@@ -205,7 +211,7 @@ class DefaultActionsTest(TestCase):
 
         stage2 = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Next Stage",
             name_ar="المرحلة التالية",
             created_by=self.user,
@@ -239,10 +245,9 @@ class DefaultActionsTest(TestCase):
 
         pipeline2 = Pipeline.objects.create(
             workflow=self.workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Second Pipeline",
             name_ar="الخط الثاني",
-            department_id=self.department2.id,
             created_by=self.user,
             order=1,
         )
@@ -445,11 +450,15 @@ class TestDefaultActionsIntegration:
             username="testuser", email="test@example.com", password="testpass123"
         )
 
+        # Create a company user that represents the organization
+        company_user = User.objects.create_user(
+            username="testcompany", email="company@example.com", password="testpass123"
+        )
         company = Company.objects.create(name="Test Company")
         department = Department.objects.create(name="Test Department", company=company)
 
         workflow = WorkFlow.objects.create(
-            company=company,
+            company=company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -458,16 +467,18 @@ class TestDefaultActionsIntegration:
 
         pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=company,
+            company=company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
-            department_id=department.id,
             created_by=user,
         )
+        # Set department using GenericForeignKey
+        pipeline.department = department
+        pipeline.save()
 
         stage = Stage.objects.create(
             pipeline=pipeline,
-            company=company,
+            company=company_user,
             name_en="Test Stage",
             name_ar="مرحلة تجريبية",
             is_active=True,

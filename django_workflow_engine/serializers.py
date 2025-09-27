@@ -6,13 +6,14 @@ from typing import Any, Dict, List, Optional, Union
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 
-from approval_workflow.choices import ApprovalStatus
+from approval_workflow.choices import ApprovalStatus, RoleSelectionStrategy
 from approval_workflow.models import ApprovalInstance
 from approval_workflow.services import advance_flow, get_current_approval_for_object
 from rest_framework import serializers
 
+from .choices import ApprovalTypes
 from .logging_utils import log_serializer_validation, serializers_logger
-from .models import Stage, WorkflowAttachment
+from .models import Pipeline, Stage, WorkFlow, WorkflowAttachment
 from .services import get_workflow_attachment
 
 logger = logging.getLogger(__name__)
@@ -376,3 +377,219 @@ class WorkflowAttachmentSerializer(serializers.ModelSerializer):
     def get_target_object_repr(self, obj):
         """Get string representation of target object."""
         return str(obj.target) if obj.target else None
+
+
+class StageDetailSerializer(serializers.ModelSerializer):
+    """Detailed serializer for Stage model with approval configuration."""
+
+    approvals_count = serializers.SerializerMethodField()
+    has_approvals = serializers.SerializerMethodField()
+    approval_configuration = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Stage
+        fields = [
+            "id",
+            "name_en",
+            "name_ar",
+            "order",
+            "is_active",
+            "stage_info",
+            "approvals_count",
+            "has_approvals",
+            "approval_configuration",
+            "created_at",
+            "modified_at",
+        ]
+
+    def get_approvals_count(self, obj):
+        """Get number of approval configurations in this stage."""
+        approvals = obj.stage_info.get("approvals", [])
+        return len(approvals)
+
+    def get_has_approvals(self, obj):
+        """Check if stage has any approval configurations."""
+        approvals = obj.stage_info.get("approvals", [])
+        return len(approvals) > 0
+
+    def get_approval_configuration(self, obj):
+        """Get detailed approval configuration for this stage."""
+        approvals = obj.stage_info.get("approvals", [])
+
+        # Enrich approval data with readable information
+        enriched_approvals = []
+        for approval in approvals:
+            enriched_approval = approval.copy()
+
+            # Add human-readable approval type
+            approval_type = approval.get("approval_type", "")
+            if approval_type == ApprovalTypes.ROLE:
+                enriched_approval["approval_type_display"] = "Role-based Approval"
+            elif approval_type == ApprovalTypes.USER:
+                enriched_approval["approval_type_display"] = "User-specific Approval"
+            elif approval_type == ApprovalTypes.SELF:
+                enriched_approval["approval_type_display"] = "Self Approval"
+            else:
+                enriched_approval["approval_type_display"] = approval_type
+
+            # Add human-readable role selection strategy
+            strategy = approval.get("role_selection_strategy", "")
+            if strategy == RoleSelectionStrategy.ANYONE:
+                enriched_approval["strategy_display"] = "Any user with role can approve"
+            elif strategy == RoleSelectionStrategy.CONSENSUS:
+                enriched_approval["strategy_display"] = (
+                    "All users with role must approve"
+                )
+            elif strategy == RoleSelectionStrategy.ROUND_ROBIN:
+                enriched_approval["strategy_display"] = (
+                    "Rotate approval among role users"
+                )
+            else:
+                enriched_approval["strategy_display"] = strategy
+
+            enriched_approvals.append(enriched_approval)
+
+        return {
+            "approvals": enriched_approvals,
+            "color": obj.stage_info.get("color", "#3498db"),
+            "total_approvals": len(enriched_approvals),
+        }
+
+
+class PipelineDetailSerializer(serializers.ModelSerializer):
+    """Detailed serializer for Pipeline model with stages."""
+
+    stages = StageDetailSerializer(many=True, read_only=True)
+    stages_count = serializers.SerializerMethodField()
+    department_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = Pipeline
+        fields = [
+            "id",
+            "name_en",
+            "name_ar",
+            "order",
+            "department",
+            "department_name",
+            "stages",
+            "stages_count",
+            "created_at",
+            "modified_at",
+        ]
+
+    def get_stages_count(self, obj):
+        """Get number of stages in this pipeline."""
+        return obj.stages.count()
+
+    def get_department_name(self, obj):
+        """Get department name if available."""
+        return obj.department_name
+
+
+class WorkFlowDetailSerializer(serializers.ModelSerializer):
+    """Detailed serializer for WorkFlow model with pipelines and stages."""
+
+    pipelines = PipelineDetailSerializer(many=True, read_only=True)
+    pipelines_count = serializers.SerializerMethodField()
+    total_stages_count = serializers.SerializerMethodField()
+    company_name = serializers.SerializerMethodField()
+    workflow_summary = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkFlow
+        fields = [
+            "id",
+            "name_en",
+            "name_ar",
+            "company",
+            "company_name",
+            "is_active",
+            "description",
+            "pipelines",
+            "pipelines_count",
+            "total_stages_count",
+            "workflow_summary",
+            "created_at",
+            "modified_at",
+        ]
+
+    def get_pipelines_count(self, obj):
+        """Get number of pipelines in this workflow."""
+        return obj.pipelines.count()
+
+    def get_total_stages_count(self, obj):
+        """Get total number of stages across all pipelines."""
+        return sum(pipeline.stages.count() for pipeline in obj.pipelines.all())
+
+    def get_company_name(self, obj):
+        """Get company name if available."""
+        return obj.company.username if obj.company else None
+
+    def get_workflow_summary(self, obj):
+        """Get workflow summary information."""
+        pipelines = obj.pipelines.prefetch_related("stages").all()
+
+        summary = {
+            "total_pipelines": len(pipelines),
+            "total_stages": 0,
+            "total_approvals": 0,
+            "pipeline_breakdown": [],
+        }
+
+        for pipeline in pipelines:
+            stages = pipeline.stages.all()
+            pipeline_approvals = 0
+
+            for stage in stages:
+                approvals = stage.stage_info.get("approvals", [])
+                pipeline_approvals += len(approvals)
+                summary["total_approvals"] += len(approvals)
+
+            summary["total_stages"] += len(stages)
+            summary["pipeline_breakdown"].append(
+                {
+                    "pipeline_name": pipeline.name_en,
+                    "pipeline_order": pipeline.order,
+                    "stages_count": len(stages),
+                    "approvals_count": pipeline_approvals,
+                }
+            )
+
+        return summary
+
+
+class WorkFlowListSerializer(serializers.ModelSerializer):
+    """Simplified serializer for WorkFlow list view."""
+
+    pipelines_count = serializers.SerializerMethodField()
+    total_stages_count = serializers.SerializerMethodField()
+    company_name = serializers.SerializerMethodField()
+
+    class Meta:
+        model = WorkFlow
+        fields = [
+            "id",
+            "name_en",
+            "name_ar",
+            "company",
+            "company_name",
+            "is_active",
+            "description",
+            "pipelines_count",
+            "total_stages_count",
+            "created_at",
+            "modified_at",
+        ]
+
+    def get_pipelines_count(self, obj):
+        """Get number of pipelines in this workflow."""
+        return obj.pipelines.count()
+
+    def get_total_stages_count(self, obj):
+        """Get total number of stages across all pipelines."""
+        return sum(pipeline.stages.count() for pipeline in obj.pipelines.all())
+
+    def get_company_name(self, obj):
+        """Get company name if available."""
+        return obj.company.username if obj.company else None

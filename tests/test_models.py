@@ -33,11 +33,26 @@ class WorkFlowModelTest(TestCase):
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
-        # Create a real company for testing
-        self.company = Company.objects.create(name="Test Company")
-        self.department = Department.objects.create(
-            name="Test Department", company=self.company
+        # Create a company user that represents the organization
+        import uuid
+
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
         )
+        # Create a real company for testing
+        # Create a company user that represents the organization
+        import uuid
+
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
+        self.company = Company.objects.create(name="Test Company")
         self.department = Department.objects.create(
             name="Test Department", company=self.company
         )
@@ -45,7 +60,7 @@ class WorkFlowModelTest(TestCase):
     def test_workflow_creation(self):
         """Test creating a workflow."""
         workflow = WorkFlow.objects.create(
-            company=self.company,
+            company=self.company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             description="Test workflow description",
@@ -60,7 +75,7 @@ class WorkFlowModelTest(TestCase):
     def test_workflow_is_active_with_pipelines(self):
         """Test workflow is_active property with complete pipelines."""
         workflow = WorkFlow.objects.create(
-            company=self.company,
+            company=self.company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -70,7 +85,7 @@ class WorkFlowModelTest(TestCase):
         # Create pipeline with stages
         pipeline = Pipeline.objects.create(
             workflow=workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
             department=self.department,
@@ -79,7 +94,7 @@ class WorkFlowModelTest(TestCase):
 
         Stage.objects.create(
             pipeline=pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Stage 1",
             name_ar="المرحلة 1",
             created_by=self.user,
@@ -99,13 +114,22 @@ class PipelineModelTest(TestCase):
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
+        # Create a company user that represents the organization
+        import uuid
+
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         self.company = Company.objects.create(name="Test Company")
         self.department = Department.objects.create(
             name="Test Department", company=self.company
         )
 
         self.workflow = WorkFlow.objects.create(
-            company=self.company,
+            company=self.company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -116,7 +140,7 @@ class PipelineModelTest(TestCase):
         """Test creating a pipeline."""
         pipeline = Pipeline.objects.create(
             workflow=self.workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
             department=self.department,
@@ -132,7 +156,7 @@ class PipelineModelTest(TestCase):
         """Test creating stages for a pipeline."""
         pipeline = Pipeline.objects.create(
             workflow=self.workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
             department=self.department,
@@ -141,7 +165,7 @@ class PipelineModelTest(TestCase):
 
         stage1 = Stage.objects.create(
             pipeline=pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Stage 1",
             name_ar="المرحلة 1",
             created_by=self.user,
@@ -150,7 +174,7 @@ class PipelineModelTest(TestCase):
 
         stage2 = Stage.objects.create(
             pipeline=pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Stage 2",
             name_ar="المرحلة 2",
             created_by=self.user,
@@ -169,13 +193,22 @@ class WorkflowActionModelTest(TestCase):
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
+        # Create a company user that represents the organization
+        import uuid
+
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         self.company = Company.objects.create(name="Test Company")
         self.department = Department.objects.create(
             name="Test Department", company=self.company
         )
 
         self.workflow = WorkFlow.objects.create(
-            company=self.company,
+            company=self.company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -184,7 +217,7 @@ class WorkflowActionModelTest(TestCase):
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
             department=self.department,
@@ -193,7 +226,7 @@ class WorkflowActionModelTest(TestCase):
 
         self.stage = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Stage",
             name_ar="مرحلة تجريبية",
             created_by=self.user,
@@ -260,13 +293,22 @@ class WorkflowAttachmentModelTest(TestCase):
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
+        # Create a company user that represents the organization
+        import uuid
+
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
         self.company = Company.objects.create(name="Test Company")
         self.department = Department.objects.create(
             name="Test Department", company=self.company
         )
 
         self.workflow = WorkFlow.objects.create(
-            company=self.company,
+            company=self.company_user,
             name_en="Test Workflow",
             name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
@@ -275,7 +317,7 @@ class WorkflowAttachmentModelTest(TestCase):
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Pipeline",
             name_ar="خط أنابيب تجريبي",
             department=self.department,
@@ -284,7 +326,7 @@ class WorkflowAttachmentModelTest(TestCase):
 
         self.stage = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Test Stage",
             name_ar="مرحلة تجريبية",
             created_by=self.user,
@@ -314,7 +356,7 @@ class WorkflowAttachmentModelTest(TestCase):
         # Create second stage
         Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Stage 2",
             name_ar="المرحلة 2",
             created_by=self.user,
@@ -341,7 +383,7 @@ class WorkflowAttachmentModelTest(TestCase):
         """Test next stage calculation."""
         stage2 = Stage.objects.create(
             pipeline=self.pipeline,
-            company=self.company,
+            company=self.company_user,
             name_en="Stage 2",
             name_ar="المرحلة 2",
             created_by=self.user,

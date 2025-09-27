@@ -85,6 +85,28 @@ def get_auto_start_workflows():
     return workflow_settings.get("AUTO_START_WORKFLOWS", {})
 
 
+def get_department_model_mapping():
+    """
+    Get department model mapping configuration
+
+    Returns:
+        str: Model string for department model or None for no mapping
+
+    Example in settings.py:
+        DJANGO_WORKFLOW_ENGINE = {
+            'DEPARTMENT_MODEL': 'myapp.Department'  # Map to any model
+        }
+
+    This allows users to map the department GenericForeignKey to any model:
+    - 'myapp.Department'
+    - 'auth.Group'
+    - 'companies.Division'
+    - etc.
+    """
+    workflow_settings = get_workflow_settings()
+    return workflow_settings.get("DEPARTMENT_MODEL", None)
+
+
 def get_workflow_permissions():
     """
     Get workflow permissions configuration
@@ -176,6 +198,7 @@ DEFAULT_SETTINGS = {
         # Example: 'myapp.PurchaseRequest'
     ],
     "DEFAULT_STATUS_FIELD": "workflow_status",
+    "DEPARTMENT_MODEL": None,  # Set to 'app_label.ModelName' to map departments to a specific model
     "MODEL_WORKFLOW_MAPPINGS": {
         # Map models to their available workflows
         # 'app_label.ModelName': ['workflow_slug1', 'workflow_slug2']

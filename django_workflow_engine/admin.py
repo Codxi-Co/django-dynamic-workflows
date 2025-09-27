@@ -29,14 +29,14 @@ class WorkFlowAdmin(admin.ModelAdmin):
     ]
     list_filter = ["status", "company", "created_at"]
     search_fields = ["name_en", "name_ar", "description"]
-    readonly_fields = ["created_at", "updated_at"]
+    readonly_fields = ["created_at", "modified_at"]
 
     fieldsets = (
         (None, {"fields": ("company", "name_en", "name_ar", "status", "description")}),
         (
             "Audit",
             {
-                "fields": ("created_by", "modified_by", "created_at", "updated_at"),
+                "fields": ("created_by", "modified_by", "created_at", "modified_at"),
                 "classes": ("collapse",),
             },
         ),
@@ -58,7 +58,7 @@ class PipelineAdmin(admin.ModelAdmin):
     ]
     list_filter = ["workflow", "department", "company", "created_at"]
     search_fields = ["name_en", "name_ar", "workflow__name_en"]
-    readonly_fields = ["created_at", "updated_at"]
+    readonly_fields = ["created_at", "modified_at"]
 
     fieldsets = (
         (
@@ -77,7 +77,7 @@ class PipelineAdmin(admin.ModelAdmin):
         (
             "Audit",
             {
-                "fields": ("created_by", "modified_by", "created_at", "updated_at"),
+                "fields": ("created_by", "modified_by", "created_at", "modified_at"),
                 "classes": ("collapse",),
             },
         ),
@@ -98,7 +98,7 @@ class StageAdmin(admin.ModelAdmin):
     ]
     list_filter = ["is_active", "pipeline__workflow", "pipeline", "created_at"]
     search_fields = ["name_en", "name_ar", "pipeline__name_en"]
-    readonly_fields = ["created_at", "updated_at"]
+    readonly_fields = ["created_at", "modified_at"]
 
     fieldsets = (
         (
@@ -121,7 +121,7 @@ class StageAdmin(admin.ModelAdmin):
         (
             "Audit",
             {
-                "fields": ("created_by", "modified_by", "created_at", "updated_at"),
+                "fields": ("created_by", "modified_by", "created_at", "modified_at"),
                 "classes": ("collapse",),
             },
         ),
@@ -143,7 +143,7 @@ class WorkflowAttachmentAdmin(admin.ModelAdmin):
     ]
     list_filter = ["status", "workflow", "content_type", "started_at"]
     search_fields = ["object_id", "workflow__name_en"]
-    readonly_fields = ["created_at", "updated_at", "progress_percentage"]
+    readonly_fields = ["created_at", "modified_at", "progress_percentage"]
 
     fieldsets = (
         (None, {"fields": ("workflow", "content_type", "object_id", "status")}),
@@ -155,7 +155,7 @@ class WorkflowAttachmentAdmin(admin.ModelAdmin):
         ("Metadata", {"fields": ("metadata",), "classes": ("collapse",)}),
         (
             "Timestamps",
-            {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
+            {"fields": ("created_at", "modified_at"), "classes": ("collapse",)},
         ),
     )
 
@@ -211,11 +211,11 @@ class WorkflowConfigurationAdmin(admin.ModelAdmin):
         ),
         (
             "Timestamps",
-            {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
+            {"fields": ("created_at", "modified_at"), "classes": ("collapse",)},
         ),
     )
 
-    readonly_fields = ["created_at", "updated_at"]
+    readonly_fields = ["created_at", "modified_at"]
 
     def get_model_name(self, obj):
         """Get formatted model name."""
@@ -243,7 +243,7 @@ class WorkflowActionAdmin(admin.ModelAdmin):
         "pipeline__name_en",
         "stage__name_en",
     ]
-    readonly_fields = ["created_at", "updated_at", "scope_level"]
+    readonly_fields = ["created_at", "modified_at", "scope_level"]
 
     fieldsets = (
         (None, {"fields": ("action_type", "function_path", "is_active", "order")}),
@@ -258,7 +258,7 @@ class WorkflowActionAdmin(admin.ModelAdmin):
         ("Info", {"fields": ("scope_level",), "classes": ("collapse",)}),
         (
             "Timestamps",
-            {"fields": ("created_at", "updated_at"), "classes": ("collapse",)},
+            {"fields": ("created_at", "modified_at"), "classes": ("collapse",)},
         ),
     )
 

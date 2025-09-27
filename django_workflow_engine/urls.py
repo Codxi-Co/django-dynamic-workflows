@@ -4,18 +4,19 @@ from django.urls import include, path
 
 from rest_framework.routers import DefaultRouter
 
-from .views import WorkflowAttachmentViewSet
+from .views import WorkflowAttachmentViewSet, WorkFlowViewSet
 
 # Create router for viewsets
 router = DefaultRouter()
 router.register(
     r"attachments", WorkflowAttachmentViewSet, basename="workflow-attachment"
 )
+router.register(r"workflows", WorkFlowViewSet, basename="workflow")
 
 app_name = "django_workflow_engine"
 
 urlpatterns = [
-    path("api/workflow/", include(router.urls)),
+    path("", include(router.urls)),
 ]
 
 # Individual URL patterns for non-viewset views (if needed)

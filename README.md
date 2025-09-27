@@ -650,6 +650,273 @@ const approvePurchaseStage = async (purchaseId, formData) => {
 
 This example shows the complete journey from creating a purchase request to final approval, demonstrating how the workflow engine handles multi-pipeline, multi-stage processes with proper progression control.
 
+## Detailed Workflow Data Functions
+
+The Django Workflow Engine provides optimized functions for retrieving comprehensive workflow information with minimal database queries.
+
+### Core Functions
+
+#### `get_detailed_workflow_data()`
+
+Get complete workflow information with all nested pipelines and stages.
+
+```python
+from django_workflow_engine.services import get_detailed_workflow_data
+
+# Get specific workflow with full details
+workflow_data = get_detailed_workflow_data(workflow_id=1)
+
+# Get all active workflows for a company
+workflows_data = get_detailed_workflow_data(company_id=1)
+
+# Get all workflows including inactive
+all_workflows = get_detailed_workflow_data(include_inactive=True)
+```
+
+**Response Structure:**
+```python
+{
+    'id': 1,
+    'name_en': 'Purchase Request Workflow',
+    'name_ar': 'سير عمل طلب الشراء',
+    'company': 1,
+    'company_name': 'Acme Corp',
+    'is_active': True,
+    'pipelines_count': 2,
+    'total_stages_count': 4,
+    'pipelines': [
+        {
+            'id': 1,
+            'name_en': 'Finance Review',
+            'stages_count': 3,
+            'stages': [
+                {
+                    'id': 1,
+                    'name_en': 'Initial Review',
+                    'approvals_count': 1,
+                    'has_approvals': True,
+                    'approval_configuration': {
+                        'approvals': [
+                            {
+                                'approval_type': 'ROLE',
+                                'approval_type_display': 'Role-based Approval',
+                                'role_selection_strategy': 'anyone',
+                                'strategy_display': 'Any user with role can approve'
+                            }
+                        ]
+                    }
+                }
+            ]
+        }
+    ],
+    'workflow_summary': {
+        'total_pipelines': 2,
+        'total_stages': 4,
+        'total_approvals': 6
+    }
+}
+```
+
+#### `get_workflow_pipeline_structure()`
+
+Get simplified pipeline structure for visualization.
+
+```python
+from django_workflow_engine.services import get_workflow_pipeline_structure
+
+structure = get_workflow_pipeline_structure(workflow_id=1)
+```
+
+#### `get_workflow_approval_summary()`
+
+Get approval statistics and breakdown.
+
+```python
+from django_workflow_engine.services import get_workflow_approval_summary
+
+summary = get_workflow_approval_summary(workflow_id=1)
+# Returns approval counts by type, strategy, and pipeline breakdown
+```
+
+#### `get_workflow_statistics()`
+
+Get system-wide workflow statistics.
+
+```python
+from django_workflow_engine.services import get_workflow_statistics
+
+# All workflows
+stats = get_workflow_statistics()
+
+# Company-specific
+stats = get_workflow_statistics(company_id=1)
+```
+
+### Performance Features
+
+- **Optimized Queries**: Uses `select_related` and `prefetch_related` for minimal database hits
+- **Smart Caching**: Processes related data in memory to avoid N+1 queries
+- **Flexible Filtering**: Company and active status filters with efficient query building
+- **Rich Metadata**: Enriched approval configurations with human-readable displays
+
+### Usage Examples
+
+#### Workflow Dashboard
+
+```python
+def build_workflow_dashboard(company_id=None):
+    """Build comprehensive workflow dashboard data"""
+    # Get all workflows with statistics
+    workflows_data = get_detailed_workflow_data(
+        company_id=company_id,
+        include_inactive=False
+    )
+
+    return {
+        'workflows': workflows_data['workflows'],
+        'total_count': workflows_data['total_count'],
+        'statistics': workflows_data['statistics']
+    }
+```
+
+#### Workflow Analysis
+
+```python
+def analyze_workflow_complexity(workflow_id):
+    """Analyze workflow complexity metrics"""
+    # Get detailed data
+    workflow = get_detailed_workflow_data(workflow_id=workflow_id)
+
+    # Get approval breakdown
+    approval_summary = get_workflow_approval_summary(workflow_id)
+
+    return {
+        'complexity_score': workflow['workflow_summary']['total_approvals'],
+        'pipeline_count': workflow['pipelines_count'],
+        'avg_approvals_per_stage': (
+            approval_summary['total_approvals'] /
+            workflow['total_stages_count']
+        ),
+        'role_based_percentage': (
+            approval_summary['by_type']['ROLE'] /
+            approval_summary['total_approvals'] * 100
+        )
+    }
+```
+
+#### Workflow Visualization Data
+
+```python
+def get_workflow_diagram_data(workflow_id):
+    """Get data formatted for workflow diagrams"""
+    structure = get_workflow_pipeline_structure(workflow_id)
+
+    nodes = []
+    edges = []
+
+    for pipeline in structure['pipelines']:
+        for i, stage in enumerate(pipeline['stages']):
+            nodes.append({
+                'id': f"stage-{stage['id']}",
+                'label': stage['name_en'],
+                'color': stage['color'],
+                'approvals': stage['approvals_count']
+            })
+
+            # Connect to previous stage
+            if i > 0:
+                prev_stage = pipeline['stages'][i-1]
+                edges.append({
+                    'from': f"stage-{prev_stage['id']}",
+                    'to': f"stage-{stage['id']}"
+                })
+
+    return {'nodes': nodes, 'edges': edges}
+```
+
+#### Performance Monitoring
+
+```python
+def monitor_workflow_performance():
+    """Monitor system-wide workflow performance"""
+    stats = get_workflow_statistics()
+    overview = stats['overview']
+
+    return {
+        'total_workflows': overview['total_workflows'],
+        'active_percentage': (
+            overview['active_workflows'] /
+            overview['total_workflows'] * 100
+        ),
+        'avg_complexity': overview['avg_stages_per_workflow'],
+        'companies': len(stats['by_company']),
+        'bottlenecks': [
+            company for company, data in stats['by_company'].items()
+            if data['approvals'] / data['stages'] > 2.0  # High approval ratio
+        ]
+    }
+```
+
+## Configuration
+
+The Django Workflow Engine can be configured through your Django settings:
+
+```python
+# settings.py
+DJANGO_WORKFLOW_ENGINE = {
+    # Department Model Mapping (NEW)
+    # Map the department GenericForeignKey to any model in your project
+    'DEPARTMENT_MODEL': 'myapp.Department',  # Optional: specify your department model
+
+    # Model Configuration
+    'ENABLED_MODELS': [
+        'myapp.PurchaseRequest',
+        'crm.Opportunity',
+        'support.Ticket',
+    ],
+
+    # Default field name for workflow status
+    'DEFAULT_STATUS_FIELD': 'workflow_status',
+
+    # Workflow Mappings
+    'MODEL_WORKFLOW_MAPPINGS': {
+        'myapp.PurchaseRequest': ['purchase_approval', 'emergency_approval'],
+        'crm.Opportunity': ['sales_process'],
+    },
+
+    # Auto-start Configuration
+    'AUTO_START_WORKFLOWS': {
+        'myapp.PurchaseRequest': {
+            'workflow_slug': 'purchase_approval',
+            'conditions': {'amount__gte': 1000}  # Only for amounts >= 1000
+        }
+    },
+
+    # Permissions
+    'PERMISSIONS': {
+        'REQUIRE_PERMISSION_TO_START': True,
+        'REQUIRE_PERMISSION_TO_APPROVE': True,
+    }
+}
+```
+
+### Department Model Configuration
+
+The `DEPARTMENT_MODEL` setting allows you to map the department field in workflows to any model in your project:
+
+```python
+# Map to your custom Department model
+'DEPARTMENT_MODEL': 'myapp.Department'
+
+# Map to Django's built-in Group model
+'DEPARTMENT_MODEL': 'auth.Group'
+
+# Map to any other model with a name field
+'DEPARTMENT_MODEL': 'companies.Division'
+```
+
+This provides maximum flexibility for organizing workflows by departments, divisions, teams, or any organizational structure.
+
 ## Dependencies
 
 - Django >= 4.0

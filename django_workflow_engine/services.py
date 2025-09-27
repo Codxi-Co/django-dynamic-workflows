@@ -11,9 +11,15 @@ from django.contrib.auth import get_user_model
 from django.db.models import Model
 from django.utils import timezone
 
+from approval_workflow.choices import RoleSelectionStrategy
 from approval_workflow.models import ApprovalFlow
 
-from .choices import DEFAULT_ACTIONS, ActionType, WorkflowAttachmentStatus
+from .choices import (
+    DEFAULT_ACTIONS,
+    ActionType,
+    ApprovalTypes,
+    WorkflowAttachmentStatus,
+)
 from .models import (
     Pipeline,
     Stage,
@@ -25,6 +31,7 @@ from .models import (
 from .settings import (
     get_auto_start_workflows,
     get_default_workflow_status_field,
+    get_department_model_mapping,
     get_workflow_model_mappings,
 )
 from .settings import is_model_workflow_enabled as is_model_enabled_in_settings
@@ -32,6 +39,35 @@ from .settings import is_model_workflow_enabled as is_model_enabled_in_settings
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
+
+
+def set_pipeline_department(pipeline: Pipeline, department_id: int):
+    """Set department for a pipeline using the configured department model.
+
+    Args:
+        pipeline: Pipeline instance
+        department_id: ID of the department object
+    """
+    department_model_string = get_department_model_mapping()
+    if not department_model_string:
+        # No department model configured, skip
+        return
+
+    try:
+        # Parse model string
+        app_label, model_name = department_model_string.split(".")
+
+        # Get the content type
+        from django.contrib.contenttypes.models import ContentType
+
+        content_type = ContentType.objects.get(app_label=app_label, model=model_name)
+
+        # Set the generic foreign key fields
+        pipeline.department_content_type = content_type
+        pipeline.department_object_id = department_id
+
+    except (ValueError, ContentType.DoesNotExist) as e:
+        logger.warning(f"Could not set department for pipeline {pipeline.id}: {str(e)}")
 
 
 def log_workflow_action(
@@ -122,10 +158,15 @@ def create_pipeline(
         company=workflow.company,
         name_en=pipeline_data["name_en"],
         name_ar=pipeline_data["name_ar"],
-        department_id=pipeline_data["department_id"],
         created_by=created_by,
         order=pipeline_data.get("order", 0),
     )
+
+    # Set department if provided
+    department_id = pipeline_data.get("department_id")
+    if department_id:
+        set_pipeline_department(pipeline, department_id)
+        pipeline.save()
 
     # Create stages for the pipeline
     number_of_stages = pipeline_data.get("number_of_stages", 1)
@@ -982,3 +1023,459 @@ def get_available_workflows_for_selection(
         }
         for workflow in workflows
     ]
+
+
+def get_detailed_workflow_data(
+    workflow_id: int = None, company_id: int = None, include_inactive: bool = False
+) -> Dict[str, Any]:
+    """
+    Get detailed workflow data with optimized database queries.
+
+    This function retrieves complete workflow information including all nested
+    pipelines and stages with approval configurations in a single optimized query.
+
+    Args:
+        workflow_id: Specific workflow ID to retrieve (optional)
+        company_id: Filter by company ID (optional)
+        include_inactive: Include inactive workflows (default: False)
+
+    Returns:
+        Dictionary containing:
+        - If workflow_id provided: Single workflow with complete nested data
+        - If workflow_id not provided: List of workflows with summary data
+
+    Example:
+        # Get specific workflow with full details
+        workflow_data = get_detailed_workflow_data(workflow_id=1)
+
+        # Get all active workflows for a company
+        workflows_data = get_detailed_workflow_data(company_id=1)
+
+        # Get all workflows including inactive
+        all_workflows = get_detailed_workflow_data(include_inactive=True)
+    """
+    # Base queryset with optimized prefetching
+    queryset = WorkFlow.objects.select_related("company").prefetch_related(
+        "pipelines__stages"
+    )
+
+    # Apply filters
+    if company_id:
+        queryset = queryset.filter(company_id=company_id)
+
+    if not include_inactive:
+        queryset = queryset.filter(is_active=True)
+
+    if workflow_id:
+        try:
+            workflow = queryset.get(id=workflow_id)
+            return _build_detailed_workflow_dict(workflow)
+        except WorkFlow.DoesNotExist:
+            return None
+    else:
+        workflows = list(queryset)
+        return {
+            "workflows": [
+                _build_workflow_summary_dict(workflow) for workflow in workflows
+            ],
+            "total_count": len(workflows),
+            "statistics": _calculate_workflow_statistics(workflows),
+        }
+
+
+def get_workflow_pipeline_structure(workflow_id: int) -> Dict[str, Any]:
+    """
+    Get optimized pipeline structure for a specific workflow.
+
+    Args:
+        workflow_id: Workflow ID
+
+    Returns:
+        Dictionary with pipeline structure data
+    """
+    try:
+        workflow = (
+            WorkFlow.objects.select_related("company")
+            .prefetch_related("pipelines__stages")
+            .get(id=workflow_id)
+        )
+
+        return _build_pipeline_structure_dict(workflow)
+    except WorkFlow.DoesNotExist:
+        return None
+
+
+def get_workflow_approval_summary(workflow_id: int) -> Dict[str, Any]:
+    """
+    Get approval summary statistics for a specific workflow.
+
+    Args:
+        workflow_id: Workflow ID
+
+    Returns:
+        Dictionary with approval statistics
+    """
+    try:
+        workflow = WorkFlow.objects.prefetch_related("pipelines__stages").get(
+            id=workflow_id
+        )
+
+        return _build_approval_summary_dict(workflow)
+    except WorkFlow.DoesNotExist:
+        return None
+
+
+def get_workflow_statistics(company_id: int = None) -> Dict[str, Any]:
+    """
+    Get system-wide workflow statistics.
+
+    Args:
+        company_id: Filter by company ID (optional)
+
+    Returns:
+        Dictionary with comprehensive workflow statistics
+    """
+    queryset = WorkFlow.objects.select_related("company").prefetch_related(
+        "pipelines__stages"
+    )
+
+    if company_id:
+        queryset = queryset.filter(company_id=company_id)
+
+    workflows = list(queryset)
+    return _calculate_workflow_statistics(workflows)
+
+
+# Private helper functions for optimized data building
+
+
+def _build_detailed_workflow_dict(workflow: WorkFlow) -> Dict[str, Any]:
+    """Build detailed workflow dictionary with all nested data."""
+    pipelines_data = []
+    total_stages = 0
+    total_approvals = 0
+
+    for pipeline in workflow.pipelines.all():
+        stages_data = []
+        pipeline_approvals = 0
+
+        for stage in pipeline.stages.all():
+            approvals = stage.stage_info.get("approvals", [])
+            stage_approvals = len(approvals)
+            pipeline_approvals += stage_approvals
+            total_approvals += stage_approvals
+
+            # Enrich approval data
+            enriched_approvals = []
+            for approval in approvals:
+                enriched_approval = approval.copy()
+
+                # Add human-readable approval type
+                approval_type = approval.get("approval_type", "")
+                if approval_type == ApprovalTypes.ROLE:
+                    enriched_approval["approval_type_display"] = "Role-based Approval"
+                elif approval_type == ApprovalTypes.USER:
+                    enriched_approval["approval_type_display"] = (
+                        "User-specific Approval"
+                    )
+                elif approval_type == ApprovalTypes.SELF:
+                    enriched_approval["approval_type_display"] = "Self Approval"
+                else:
+                    enriched_approval["approval_type_display"] = approval_type
+
+                # Add human-readable strategy
+                strategy = approval.get("role_selection_strategy", "")
+                if strategy == RoleSelectionStrategy.ANYONE:
+                    enriched_approval["strategy_display"] = (
+                        "Any user with role can approve"
+                    )
+                elif strategy == RoleSelectionStrategy.CONSENSUS:
+                    enriched_approval["strategy_display"] = (
+                        "All users with role must approve"
+                    )
+                elif strategy == RoleSelectionStrategy.ROUND_ROBIN:
+                    enriched_approval["strategy_display"] = (
+                        "Rotate approval among role users"
+                    )
+                else:
+                    enriched_approval["strategy_display"] = strategy
+
+                enriched_approvals.append(enriched_approval)
+
+            stages_data.append(
+                {
+                    "id": stage.id,
+                    "name_en": stage.name_en,
+                    "name_ar": stage.name_ar,
+                    "order": stage.order,
+                    "is_active": stage.is_active,
+                    "stage_info": stage.stage_info,
+                    "approvals_count": stage_approvals,
+                    "has_approvals": stage_approvals > 0,
+                    "approval_configuration": {
+                        "approvals": enriched_approvals,
+                        "color": stage.stage_info.get("color", "#3498db"),
+                        "total_approvals": stage_approvals,
+                    },
+                    "created_at": stage.created_at,
+                    "modified_at": stage.modified_at,
+                }
+            )
+
+        total_stages += len(stages_data)
+
+        pipelines_data.append(
+            {
+                "id": pipeline.id,
+                "name_en": pipeline.name_en,
+                "name_ar": pipeline.name_ar,
+                "order": pipeline.order,
+                "department": pipeline.department_name,
+                "department_name": pipeline.department_name,
+                "stages": stages_data,
+                "stages_count": len(stages_data),
+                "created_at": pipeline.created_at,
+                "modified_at": pipeline.modified_at,
+            }
+        )
+
+    # Build pipeline breakdown for summary
+    pipeline_breakdown = []
+    for pipeline_data in pipelines_data:
+        pipeline_breakdown.append(
+            {
+                "pipeline_name": pipeline_data["name_en"],
+                "pipeline_order": pipeline_data["order"],
+                "stages_count": pipeline_data["stages_count"],
+                "approvals_count": sum(
+                    stage["approvals_count"] for stage in pipeline_data["stages"]
+                ),
+            }
+        )
+
+    return {
+        "id": workflow.id,
+        "name_en": workflow.name_en,
+        "name_ar": workflow.name_ar,
+        "company": workflow.company.username if workflow.company else None,
+        "company_name": workflow.company.username if workflow.company else None,
+        "is_active": workflow.is_active,
+        "description": workflow.description,
+        "pipelines": pipelines_data,
+        "pipelines_count": len(pipelines_data),
+        "total_stages_count": total_stages,
+        "workflow_summary": {
+            "total_pipelines": len(pipelines_data),
+            "total_stages": total_stages,
+            "total_approvals": total_approvals,
+            "pipeline_breakdown": pipeline_breakdown,
+        },
+        "created_at": workflow.created_at,
+        "modified_at": workflow.modified_at,
+    }
+
+
+def _build_workflow_summary_dict(workflow: WorkFlow) -> Dict[str, Any]:
+    """Build workflow summary dictionary for list views."""
+    pipelines_count = workflow.pipelines.count()
+    total_stages_count = sum(
+        pipeline.stages.count() for pipeline in workflow.pipelines.all()
+    )
+
+    return {
+        "id": workflow.id,
+        "name_en": workflow.name_en,
+        "name_ar": workflow.name_ar,
+        "company": workflow.company.username if workflow.company else None,
+        "company_name": workflow.company.username if workflow.company else None,
+        "is_active": workflow.is_active,
+        "description": workflow.description,
+        "pipelines_count": pipelines_count,
+        "total_stages_count": total_stages_count,
+        "created_at": workflow.created_at,
+        "modified_at": workflow.modified_at,
+    }
+
+
+def _build_pipeline_structure_dict(workflow: WorkFlow) -> Dict[str, Any]:
+    """Build pipeline structure dictionary."""
+    pipelines_data = []
+    total_stages = 0
+
+    for pipeline in workflow.pipelines.all():
+        stages_data = []
+        for stage in pipeline.stages.all():
+            approvals = stage.stage_info.get("approvals", [])
+
+            # Count approvals by type
+            approval_counts = {
+                ApprovalTypes.ROLE: 0,
+                ApprovalTypes.USER: 0,
+                ApprovalTypes.SELF: 0,
+            }
+            for approval in approvals:
+                approval_type = approval.get("approval_type", "")
+                if approval_type in approval_counts:
+                    approval_counts[approval_type] += 1
+
+            stages_data.append(
+                {
+                    "id": stage.id,
+                    "name_en": stage.name_en,
+                    "name_ar": stage.name_ar,
+                    "order": stage.order,
+                    "is_active": stage.is_active,
+                    "approvals_count": len(approvals),
+                    "approval_types": approval_counts,
+                    "color": stage.stage_info.get("color", "#3498db"),
+                    "has_forms": any(
+                        approval.get("required_form") for approval in approvals
+                    ),
+                }
+            )
+
+        total_stages += len(stages_data)
+
+        pipelines_data.append(
+            {
+                "id": pipeline.id,
+                "name_en": pipeline.name_en,
+                "name_ar": pipeline.name_ar,
+                "order": pipeline.order,
+                "department": pipeline.department_name,
+                "stages": stages_data,
+                "stages_count": len(stages_data),
+            }
+        )
+
+    return {
+        "workflow_id": workflow.id,
+        "workflow_name": workflow.name_en,
+        "pipelines": pipelines_data,
+        "total_pipelines": len(pipelines_data),
+        "total_stages": total_stages,
+    }
+
+
+def _build_approval_summary_dict(workflow: WorkFlow) -> Dict[str, Any]:
+    """Build approval summary dictionary."""
+    approval_stats = {
+        "total_approvals": 0,
+        "by_type": {
+            ApprovalTypes.ROLE: 0,
+            ApprovalTypes.USER: 0,
+            ApprovalTypes.SELF: 0,
+        },
+        "by_strategy": {
+            RoleSelectionStrategy.ANYONE: 0,
+            RoleSelectionStrategy.CONSENSUS: 0,
+            RoleSelectionStrategy.ROUND_ROBIN: 0,
+        },
+        "stages_with_forms": 0,
+        "pipeline_breakdown": [],
+    }
+
+    for pipeline in workflow.pipelines.all():
+        pipeline_stats = {
+            "pipeline_name": pipeline.name_en,
+            "pipeline_order": pipeline.order,
+            "stages": [],
+            "total_approvals": 0,
+        }
+
+        for stage in pipeline.stages.all():
+            approvals = stage.stage_info.get("approvals", [])
+            stage_approvals = len(approvals)
+            pipeline_stats["total_approvals"] += stage_approvals
+            approval_stats["total_approvals"] += stage_approvals
+
+            # Count by type and strategy
+            has_forms = False
+            for approval in approvals:
+                approval_type = approval.get("approval_type", "")
+                if approval_type in approval_stats["by_type"]:
+                    approval_stats["by_type"][approval_type] += 1
+
+                strategy = approval.get("role_selection_strategy", "")
+                if strategy in approval_stats["by_strategy"]:
+                    approval_stats["by_strategy"][strategy] += 1
+
+                if approval.get("required_form"):
+                    has_forms = True
+
+            if has_forms:
+                approval_stats["stages_with_forms"] += 1
+
+            pipeline_stats["stages"].append(
+                {
+                    "stage_name": stage.name_en,
+                    "stage_order": stage.order,
+                    "approvals_count": stage_approvals,
+                    "has_forms": has_forms,
+                }
+            )
+
+        approval_stats["pipeline_breakdown"].append(pipeline_stats)
+
+    return approval_stats
+
+
+def _calculate_workflow_statistics(workflows: List[WorkFlow]) -> Dict[str, Any]:
+    """Calculate comprehensive workflow statistics."""
+    total_workflows = len(workflows)
+    active_workflows = sum(1 for w in workflows if w.is_active)
+
+    total_pipelines = 0
+    total_stages = 0
+    total_approvals = 0
+    company_stats = {}
+
+    for workflow in workflows:
+        company_name = workflow.company.username if workflow.company else "No Company"
+        if company_name not in company_stats:
+            company_stats[company_name] = {
+                "workflows": 0,
+                "pipelines": 0,
+                "stages": 0,
+                "approvals": 0,
+            }
+
+        workflow_pipelines = workflow.pipelines.count()
+        workflow_stages = sum(
+            pipeline.stages.count() for pipeline in workflow.pipelines.all()
+        )
+        workflow_approvals = 0
+
+        for pipeline in workflow.pipelines.all():
+            for stage in pipeline.stages.all():
+                approvals = stage.stage_info.get("approvals", [])
+                workflow_approvals += len(approvals)
+
+        total_pipelines += workflow_pipelines
+        total_stages += workflow_stages
+        total_approvals += workflow_approvals
+
+        company_stats[company_name]["workflows"] += 1
+        company_stats[company_name]["pipelines"] += workflow_pipelines
+        company_stats[company_name]["stages"] += workflow_stages
+        company_stats[company_name]["approvals"] += workflow_approvals
+
+    return {
+        "overview": {
+            "total_workflows": total_workflows,
+            "active_workflows": active_workflows,
+            "inactive_workflows": total_workflows - active_workflows,
+            "total_pipelines": total_pipelines,
+            "total_stages": total_stages,
+            "total_approvals": total_approvals,
+            "avg_pipelines_per_workflow": (
+                round(total_pipelines / total_workflows, 2)
+                if total_workflows > 0
+                else 0
+            ),
+            "avg_stages_per_workflow": (
+                round(total_stages / total_workflows, 2) if total_workflows > 0 else 0
+            ),
+        },
+        "by_company": company_stats,
+    }
