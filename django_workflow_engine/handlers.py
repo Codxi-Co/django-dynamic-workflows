@@ -323,6 +323,23 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
             logger.error(f"Error handling workflow resubmission: {str(e)}")
 
 
+def get_workflow_handler_for_object(obj):
+    """Get the workflow handler for an object.
+
+    Args:
+        obj: The object to get a handler for
+
+    Returns:
+        WorkflowApprovalHandler instance or None
+    """
+    from .services import get_workflow_attachment
+
+    attachment = get_workflow_attachment(obj)
+    if attachment:
+        return WorkflowApprovalHandler(obj)
+    return None
+
+
 class WorkflowProgressManager:
     """
     Manages workflow attachment and integration with approval flows.

@@ -2,7 +2,6 @@
 include README.md
 include CHANGELOG.md
 include TRANSLATIONS.md
-include USAGE_EXAMPLES.md
 include LICENSE
 include requirements.txt
 include requirements-dev.txt

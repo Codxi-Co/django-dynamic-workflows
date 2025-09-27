@@ -65,7 +65,7 @@ def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
         step = {
             "step": i,
             "extra_fields": {"stage_id": stage.id},
-            "assigned_to": User.objects.none(),
+            "assigned_to": None,
             "role_selection_strategy": "",
         }
 

@@ -22,10 +22,8 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 # Get model references from settings or use defaults
-COMPANY_MODEL = getattr(settings, "WORKFLOW_COMPANY_MODEL", "sandbox.testapp.Company")
-DEPARTMENT_MODEL = getattr(
-    settings, "WORKFLOW_DEPARTMENT_MODEL", "sandbox.testapp.Department"
-)
+COMPANY_MODEL = getattr(settings, "WORKFLOW_COMPANY_MODEL", "testapp.Company")
+DEPARTMENT_MODEL = getattr(settings, "WORKFLOW_DEPARTMENT_MODEL", "testapp.Department")
 
 
 class BaseCompanyModel(models.Model):
@@ -581,7 +579,7 @@ class WorkflowAction(models.Model):
         ]
         constraints = [
             models.CheckConstraint(
-                check=(
+                condition=(
                     Q(workflow__isnull=False, pipeline__isnull=True, stage__isnull=True)
                     | Q(
                         workflow__isnull=True,

@@ -22,6 +22,12 @@ from .models import (
     WorkflowAttachment,
     WorkflowConfiguration,
 )
+from .settings import (
+    get_auto_start_workflows,
+    get_default_workflow_status_field,
+    get_workflow_model_mappings,
+)
+from .settings import is_model_workflow_enabled as is_model_enabled_in_settings
 
 logger = logging.getLogger(__name__)
 
@@ -744,3 +750,235 @@ def trigger_workflow_event(
     )
 
     return execute_workflow_actions(attachment, action_type, context)
+
+
+# New functions for workflow-to-model mapping and settings integration
+
+
+def get_workflows_for_model(model_class: Type[Model]) -> List[WorkFlow]:
+    """
+    Get all available workflows for a specific model class.
+
+    Args:
+        model_class: Django model class
+
+    Returns:
+        List of WorkFlow instances available for this model
+
+    Example:
+        workflows = get_workflows_for_model(PurchaseRequest)
+        for workflow in workflows:
+            print(f"Available workflow: {workflow.name_en}")
+    """
+    # Check if model is enabled for workflows
+    if not is_model_enabled_in_settings(model_class):
+        logger.warning(
+            f"Model {model_class._meta.label} is not enabled for workflows. "
+            "Add it to DJANGO_WORKFLOW_ENGINE['ENABLED_MODELS'] in settings."
+        )
+        return []
+
+    model_string = f"{model_class._meta.app_label}.{model_class.__name__}"
+    mappings = get_workflow_model_mappings()
+
+    # If specific mappings exist, filter by them
+    if model_string in mappings:
+        workflow_names = mappings[model_string]
+        workflows = WorkFlow.objects.filter(
+            name_en__in=workflow_names, is_active=True
+        ).order_by("name_en")
+
+        log_workflow_action(
+            action="get_workflows_for_model",
+            object_type=model_string,
+            workflow_count=len(workflows),
+            workflow_names=workflow_names,
+        )
+
+        return list(workflows)
+
+    # If no specific mappings, return all active workflows
+    # (This maintains backward compatibility)
+    workflows = WorkFlow.objects.filter(is_active=True).order_by("name_en")
+
+    log_workflow_action(
+        action="get_workflows_for_model",
+        object_type=model_string,
+        workflow_count=len(workflows),
+        note="No specific mappings configured, returning all active workflows",
+    )
+
+    return list(workflows)
+
+
+def get_workflows_for_object(obj: Model) -> List[WorkFlow]:
+    """
+    Get all available workflows for a specific object instance.
+
+    Args:
+        obj: Django model instance
+
+    Returns:
+        List of WorkFlow instances available for this object
+
+    Example:
+        purchase_request = PurchaseRequest.objects.get(id=1)
+        workflows = get_workflows_for_object(purchase_request)
+        for workflow in workflows:
+            print(f"Available workflow: {workflow.name_en}")
+    """
+    return get_workflows_for_model(obj.__class__)
+
+
+def get_auto_start_workflow_for_object(obj: Model) -> Optional[WorkFlow]:
+    """
+    Get the auto-start workflow for an object if configured.
+
+    Args:
+        obj: Django model instance
+
+    Returns:
+        WorkFlow instance if auto-start is configured, None otherwise
+
+    Example:
+        purchase_request = PurchaseRequest.objects.create(...)
+        auto_workflow = get_auto_start_workflow_for_object(purchase_request)
+        if auto_workflow:
+            attach_workflow_to_object(purchase_request, auto_workflow, user, auto_start=True)
+    """
+    if not is_model_enabled_in_settings(obj.__class__):
+        return None
+
+    model_string = f"{obj._meta.app_label}.{obj.__class__.__name__}"
+    auto_start_config = get_auto_start_workflows()
+
+    if model_string not in auto_start_config:
+        return None
+
+    config = auto_start_config[model_string]
+    workflow_name = config.get("workflow_name")
+    conditions = config.get("conditions", {})
+
+    if not workflow_name:
+        logger.warning(
+            f"Auto-start configuration for {model_string} missing 'workflow_name'"
+        )
+        return None
+
+    # Check conditions if specified
+    if conditions:
+        for field_lookup, expected_value in conditions.items():
+            # Handle Django field lookups (e.g., 'amount__gte': 1000)
+            field_parts = field_lookup.split("__")
+            field_name = field_parts[0]
+            lookup_type = field_parts[1] if len(field_parts) > 1 else "exact"
+
+            if not hasattr(obj, field_name):
+                logger.warning(
+                    f"Field '{field_name}' not found on {model_string} for auto-start condition"
+                )
+                continue
+
+            field_value = getattr(obj, field_name)
+
+            # Apply lookup type
+            condition_met = False
+            if lookup_type == "exact":
+                condition_met = field_value == expected_value
+            elif lookup_type == "gte":
+                condition_met = field_value >= expected_value
+            elif lookup_type == "lte":
+                condition_met = field_value <= expected_value
+            elif lookup_type == "gt":
+                condition_met = field_value > expected_value
+            elif lookup_type == "lt":
+                condition_met = field_value < expected_value
+            elif lookup_type == "in":
+                condition_met = field_value in expected_value
+            elif lookup_type == "isnull":
+                condition_met = (field_value is None) == expected_value
+            else:
+                logger.warning(
+                    f"Unsupported lookup type '{lookup_type}' in auto-start condition"
+                )
+                continue
+
+            if not condition_met:
+                log_workflow_action(
+                    action="auto_start_condition_not_met",
+                    object_type=model_string,
+                    object_id=str(obj.pk),
+                    condition=field_lookup,
+                    expected=expected_value,
+                    actual=field_value,
+                )
+                return None
+
+    # Get the workflow
+    try:
+        workflow = WorkFlow.objects.get(name_en=workflow_name, is_active=True)
+
+        log_workflow_action(
+            action="auto_start_workflow_found",
+            object_type=model_string,
+            object_id=str(obj.pk),
+            workflow_id=workflow.id,
+            workflow_name=workflow_name,
+        )
+
+        return workflow
+
+    except WorkFlow.DoesNotExist:
+        logger.error(
+            f"Auto-start workflow '{workflow_name}' not found for {model_string}"
+        )
+        return None
+
+
+def is_model_enabled_for_workflows(model_class: Type[Model]) -> bool:
+    """
+    Check if a model is enabled for workflow functionality.
+    Alias for is_model_workflow_enabled for better naming consistency.
+
+    Args:
+        model_class: Django model class
+
+    Returns:
+        bool: True if model is enabled for workflows
+    """
+    return is_model_enabled_in_settings(model_class)
+
+
+def get_available_workflows_for_selection(
+    model_class: Type[Model],
+) -> List[Dict[str, Any]]:
+    """
+    Get workflows formatted for UI selection (forms, API responses, etc).
+
+    Args:
+        model_class: Django model class
+
+    Returns:
+        List of workflow dictionaries with id, name, and description
+
+    Example:
+        workflows = get_available_workflows_for_selection(PurchaseRequest)
+        # Returns: [
+        #     {'id': 1, 'name': 'Purchase Approval', 'description': '...', 'slug': 'purchase_approval'},
+        #     {'id': 2, 'name': 'Emergency Approval', 'description': '...', 'slug': 'emergency_approval'}
+        # ]
+    """
+    workflows = get_workflows_for_model(model_class)
+
+    return [
+        {
+            "id": workflow.id,
+            "name": workflow.name_en,
+            "name_ar": workflow.name_ar,
+            "description": getattr(workflow, "description", ""),
+            "slug": workflow.name_en.lower().replace(" ", "_"),
+            "pipeline_count": workflow.pipelines.count(),
+            "is_active": workflow.is_active,
+        }
+        for workflow in workflows
+    ]
