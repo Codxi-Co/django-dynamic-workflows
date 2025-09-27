@@ -71,6 +71,16 @@ class CompanyBaseWithNamedModel(BaseCompanyModel):
 class CompanyBaseWithNamedModelWithClone(CompanyBaseWithNamedModel):
     """Base model with cloning capability."""
 
+    cloned_from = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="cloned_%(class)s",
+        help_text=_("The original object this was cloned from"),
+        verbose_name=_("Cloned From"),
+    )
+
     class Meta:
         abstract = True
 
@@ -89,12 +99,16 @@ class CompanyBaseWithNamedModelWithClone(CompanyBaseWithNamedModel):
             if not field.primary_key and field.name not in [
                 "created_at",
                 "modified_at",
+                "cloned_from",  # Skip cloned_from during copying
             ]:
                 value = getattr(self, field.name)
                 if field.name in modified_keys:
                     if field.name in ["name_en", "name_ar"] and value:
                         value = f"{value} (Copy)"
                 setattr(new_instance, field.name, value)
+
+        # Set cloned_from to point to the original instance
+        new_instance.cloned_from = self
 
         # Apply overrides
         for key, value in overrides.items():
@@ -227,12 +241,12 @@ class Pipeline(CompanyBaseWithNamedModelWithClone):
         blank=True,
         help_text="Content type of the department model",
     )
-    department_object_id = models.PositiveIntegerField(
+    department_id = models.PositiveIntegerField(
         null=True,
         blank=True,
         help_text="ID of the department object",
     )
-    department = GenericForeignKey("department_content_type", "department_object_id")
+    department = GenericForeignKey("department_content_type", "department_id")
     order = models.PositiveIntegerField(
         default=0, help_text="Order of this pipeline in the workflow"
     )

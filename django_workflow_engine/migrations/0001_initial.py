@@ -114,7 +114,7 @@ class Migration(migrations.Migration):
                 ("name_ar", models.CharField(max_length=150, help_text="Arabic name")),
                 # Generic dept fields
                 (
-                    "department_object_id",
+                    "department_id",
                     models.PositiveIntegerField(
                         null=True, blank=True, help_text="ID of the department object"
                     ),

@@ -64,7 +64,7 @@ def set_pipeline_department(pipeline: Pipeline, department_id: int):
 
         # Set the generic foreign key fields
         pipeline.department_content_type = content_type
-        pipeline.department_object_id = department_id
+        pipeline.department_id = department_id
 
     except (ValueError, ContentType.DoesNotExist) as e:
         logger.warning(f"Could not set department for pipeline {pipeline.id}: {str(e)}")
