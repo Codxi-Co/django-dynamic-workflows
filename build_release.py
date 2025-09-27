@@ -121,7 +121,7 @@ def check_package():
 
 def main():
     """Main build process."""
-    print("🚀 Django Workflow Engine - PyPI Release Builder")
+    print("🚀 Django Dynamic Workflows - PyPI Release Builder")
     print("=" * 50)
 
     # Ensure we're in the right directory

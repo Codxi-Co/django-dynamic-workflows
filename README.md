@@ -1,4 +1,4 @@
-# Django Workflow Engine
+# Django Dynamic Workflows
 
 A powerful, configurable Django package for implementing dynamic multi-step workflow processes with database-stored actions and approval flows.
 
@@ -16,7 +16,7 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 ## Installation
 
 ```bash
-pip install django-workflow-engine
+pip install django-dynamic-workflows
 ```
 
 ## Quick Start

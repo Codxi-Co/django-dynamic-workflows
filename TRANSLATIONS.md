@@ -1,4 +1,4 @@
-# Django Workflow Engine - Translations
+# Django Dynamic Workflows - Translations
 
 This package supports both Arabic and English translations for all user-facing text.
 
@@ -28,7 +28,7 @@ USE_L10N = True
 # Add locale paths
 LOCALE_PATHS = [
     os.path.join(BASE_DIR, 'locale'),
-    # Include django-workflow-engine locale
+    # Include django-dynamic-workflows locale
     os.path.join(os.path.dirname(__file__), '..', 'venv', 'lib', 'python3.x', 'site-packages', 'django_workflow_engine', 'locale'),
 ]
 ```

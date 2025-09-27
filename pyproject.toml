@@ -7,7 +7,7 @@ include = ["django_workflow_engine*"]
 exclude = ["sandbox*", "tests*"]
 
 [project]
-name = "django-workflow-engine"
+name = "django-dynamic-workflows"
 version = "1.0.1"
 description = "A powerful, configurable Django package for implementing dynamic multi-step workflow processes with database-stored actions"
 authors = [
@@ -57,10 +57,10 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/Codxi-Co/django-workflow-engine"
-Repository = "https://github.com/Codxi-Co/django-workflow-engine.git"
-Documentation = "https://github.com/Codxi-Co/django-workflow-engine#readme"
-"Bug Tracker" = "https://github.com/Codxi-Co/django-workflow-engine/issues"
+Homepage = "https://github.com/Codxi-Co/django-dynamic-workflows"
+Repository = "https://github.com/Codxi-Co/django-dynamic-workflows.git"
+Documentation = "https://github.com/Codxi-Co/django-dynamic-workflows#readme"
+"Bug Tracker" = "https://github.com/Codxi-Co/django-dynamic-workflows/issues"
 
 [tool.black]
 line-length = 88

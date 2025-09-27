@@ -1,6 +1,6 @@
 # Changelog
 
-All notable changes to django-workflow-engine will be documented in this file.
+All notable changes to django-dynamic-workflows will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🎉 Production-Ready Release
 
-This release marks the completion of extensive testing, optimization, and internationalization work, making django-workflow-engine fully production-ready for enterprise deployment.
+This release marks the completion of extensive testing, optimization, and internationalization work, making django-dynamic-workflows fully production-ready for enterprise deployment.
 
 ### ✅ Test Coverage & Quality Improvements
 - **Achieved 100% test pass rate**: Fixed all 58 failing tests, now 69/69 tests pass
@@ -76,7 +76,7 @@ Successfully tested for:
 ## [1.0.0] - 2024-09-26
 
 ### Added
-- Initial release of Django Workflow Engine
+- Initial release of Django Dynamic Workflows
 - Generic workflow attachment system for any Django model
 - Database-stored configurable actions with inheritance system
 - Integration with django-approval-workflow package
