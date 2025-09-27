@@ -59,6 +59,18 @@ class Migration(migrations.Migration):
                         verbose_name="Is Active",
                     ),
                 ),
+                (
+                    "cloned_from",
+                    models.ForeignKey(
+                        "django_workflow_engine.workflow",
+                        null=True,
+                        blank=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="cloned_workflow",
+                        help_text="The original workflow this was cloned from",
+                        verbose_name="Cloned From",
+                    ),
+                ),
                 # BaseCompanyModel FKs
                 (
                     "company",
@@ -123,6 +135,18 @@ class Migration(migrations.Migration):
                     "order",
                     models.PositiveIntegerField(
                         default=0, help_text="Order of this pipeline in the workflow"
+                    ),
+                ),
+                (
+                    "cloned_from",
+                    models.ForeignKey(
+                        "django_workflow_engine.pipeline",
+                        null=True,
+                        blank=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="cloned_pipeline",
+                        help_text="The original pipeline this was cloned from",
+                        verbose_name="Cloned From",
                     ),
                 ),
                 # BaseCompanyModel FKs
@@ -218,6 +242,18 @@ class Migration(migrations.Migration):
                     "order",
                     models.PositiveIntegerField(
                         default=0, help_text="Order of this stage in the pipeline"
+                    ),
+                ),
+                (
+                    "cloned_from",
+                    models.ForeignKey(
+                        "django_workflow_engine.stage",
+                        null=True,
+                        blank=True,
+                        on_delete=django.db.models.deletion.CASCADE,
+                        related_name="cloned_stage",
+                        help_text="The original stage this was cloned from",
+                        verbose_name="Cloned From",
                     ),
                 ),
                 # BaseCompanyModel FKs

@@ -5,6 +5,30 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.4] - 2025-09-27
+
+### 🔄 Clone Tracking & API Improvements
+- **Added `cloned_from` field**: All workflow models (WorkFlow, Pipeline, Stage) now automatically track their clone origin
+- **Enhanced clone functionality**: Base clone method automatically sets clone relationships and handles field copying
+- **Improved API consistency**: Renamed `department_object_id` to `department_id` for cleaner, more intuitive API
+
+### 📚 Configuration Documentation
+- **Comprehensive configuration guide**: Added detailed DEPARTMENT_MODEL setting documentation to README
+- **Flexible department mapping**: Document support for mapping departments to any model (custom models, auth.Group, etc.)
+- **Developer-friendly examples**: Enhanced configuration examples with real-world use cases
+
+### 🛠 Technical Improvements
+- **Optimized service functions**: Enhanced workflow data retrieval functions with better performance
+- **Updated migrations**: Clean field renaming with proper migration handling
+- **Code quality**: Applied formatting improvements with isort and black
+
+### 📋 Migration Notes
+- **Seamless upgrade**: Field rename handled transparently in migrations
+- **No breaking changes**: All existing functionality preserved
+- **130 tests passing**: Full test coverage maintained
+
+---
+
 ## [1.0.3] - 2025-09-27
 
 ### 🔧 Model Updates

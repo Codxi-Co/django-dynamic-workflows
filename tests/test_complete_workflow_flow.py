@@ -92,7 +92,12 @@ class CompleteWorkflowFlowTest(TestCase):
         # Verify attachment created
         self.assertIsNotNone(attachment)
         self.assertEqual(attachment.target, self.purchase_request)
-        self.assertEqual(attachment.workflow, self.workflow)
+        # The attached workflow should be a clone, not the original
+        self.assertNotEqual(attachment.workflow, self.workflow)
+        self.assertEqual(attachment.workflow.cloned_from, self.workflow)
+        self.assertEqual(
+            attachment.workflow.name_en, "Purchase Request Approval (Copy)"
+        )
         self.assertEqual(attachment.started_by, self.requester)
         self.assertEqual(attachment.metadata["amount"], 15000.0)
 
@@ -105,7 +110,9 @@ class CompleteWorkflowFlowTest(TestCase):
         # Note: The approval flow is created (as shown in logs) but attachment status sync
         # may have timing issues. The core functionality works.
         self.assertIsNotNone(attachment)
-        self.assertEqual(attachment.workflow, self.workflow)
+        # Workflow should be cloned, not the original
+        self.assertNotEqual(attachment.workflow, self.workflow)
+        self.assertEqual(attachment.workflow.cloned_from, self.workflow)
         self.assertEqual(attachment.target, self.purchase_request)
 
         # Verify workflow structure

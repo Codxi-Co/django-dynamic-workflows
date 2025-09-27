@@ -1,7 +1,7 @@
 """Integration tests demonstrating complete workflow with django-approval-workflow."""
 
 import uuid
-from unittest.mock import Mock, patch
+from unittest.mock import ANY, Mock, patch
 
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
@@ -199,7 +199,9 @@ class TestCompleteWorkflowIntegration:
         )
 
         assert attachment.target == test_object
-        assert attachment.workflow == workflow
+        # Workflow should be cloned, not the original
+        assert attachment.workflow != workflow
+        assert attachment.workflow.cloned_from == workflow
         assert attachment.status == WorkflowAttachmentStatus.NOT_STARTED
 
         # Step 5: Start workflow (should create approval flow)
@@ -224,8 +226,15 @@ class TestCompleteWorkflowIntegration:
             modified_attachment = start_workflow_for_object(test_object, creator)
 
             assert modified_attachment.status == WorkflowAttachmentStatus.IN_PROGRESS
-            assert modified_attachment.current_stage == hr_stage1
-            assert modified_attachment.current_pipeline == hr_pipeline
+            # Current stage and pipeline should be from the cloned workflow
+            assert (
+                modified_attachment.current_stage.name_en
+                == f"{hr_stage1.name_en} (Copy)"
+            )
+            assert (
+                modified_attachment.current_pipeline.name_en
+                == f"{hr_pipeline.name_en} (Copy)"
+            )
             assert modified_attachment.started_by == creator
 
         # Step 6: Verify approval flow was created
@@ -349,14 +358,18 @@ class TestCompleteWorkflowIntegration:
 
                 mock_reject.assert_called_with(
                     obj=test_object,
-                    stage=hr_stage1,
+                    stage=ANY,  # Stage is now cloned, so use ANY
                     reason="Missing required documentation",
                 )
 
         # Step 12: Test resubmission scenario
+        # Get the cloned stage ID from the attachment's workflow
+        cloned_hr_stage1 = modified_attachment.workflow.pipelines.get(
+            name_en="HR Review (Copy)"
+        ).stages.get(name_en="Initial HR Review (Copy)")
         resubmission_data = {
             "action": ApprovalStatus.NEEDS_RESUBMISSION,
-            "stage_id": hr_stage1.id,
+            "stage_id": cloned_hr_stage1.id,
             "reason": "Please update document format",
         }
 

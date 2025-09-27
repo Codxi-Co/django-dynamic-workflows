@@ -65,6 +65,47 @@ attachment = attach_workflow_to_object(
 )
 ```
 
+## 🔄 Workflow Cloning & Immutability
+
+**IMPORTANT**: Django Dynamic Workflows automatically clones workflows when attaching them to objects to ensure **workflow immutability**. This prevents corruption of running workflows when the original workflow template is modified.
+
+### How It Works
+
+```python
+# When you attach a workflow:
+attachment = attach_workflow_to_object(obj=my_object, workflow=template_workflow)
+
+# A clone is created automatically:
+# - Original workflow: ID=1, name="Purchase Approval"
+# - Cloned workflow: ID=2, name="Purchase Approval (Copy)", cloned_from=1
+
+# Later modifications to the original won't affect running workflows:
+template_workflow.name_en = "Updated Purchase Approval"
+template_workflow.save()
+# Running workflow (ID=2) remains unchanged - immutable! ✅
+```
+
+### Disable Cloning (Advanced)
+
+If you need to use the original workflow without cloning (not recommended):
+
+```python
+attachment = attach_workflow_to_object(
+    obj=my_object,
+    workflow=template_workflow,
+    disable_clone=True  # ⚠️ WARNING: May cause corruption
+)
+```
+
+**⚠️ Warning**: Setting `disable_clone=True` may cause workflow corruption if the original workflow is modified after attachment. Only use this for special cases where you need direct workflow sharing.
+
+### Benefits of Workflow Cloning
+
+- ✅ **Data Integrity**: Running workflows remain stable even when templates change
+- ✅ **Version Control**: Each workflow execution has its own immutable version
+- ✅ **Audit Trail**: `cloned_from` field tracks the original template
+- ✅ **Safe Updates**: Modify workflow templates without breaking active processes
+
 ## Core Concepts
 
 ### WorkFlow, Pipeline, Stage Hierarchy
@@ -916,6 +957,61 @@ The `DEPARTMENT_MODEL` setting allows you to map the department field in workflo
 ```
 
 This provides maximum flexibility for organizing workflows by departments, divisions, teams, or any organizational structure.
+
+### Company Model Architecture
+
+**Important**: The `company` field in workflow models uses Django's `AUTH_USER_MODEL` (User model) for maximum flexibility:
+
+```python
+# Workflow models use User as company for multi-tenant support:
+class WorkFlow(models.Model):
+    company = models.ForeignKey(
+        settings.AUTH_USER_MODEL,  # Uses your User model
+        on_delete=models.SET_NULL,
+        related_name="workflow_company"
+    )
+```
+
+#### Why User Model for Company?
+
+This design supports various multi-tenant architectures:
+
+```python
+# Single Company per User
+user.username = "acme_corp"
+user.email = "admin@acmecorp.com"
+
+# Multi-tenant SaaS where users represent companies
+company_user = User.objects.create(
+    username="company_123",
+    email="admin@company123.com"
+)
+
+# Enterprise where User has company profile
+user.profile.company_name = "Enterprise Corp"
+```
+
+#### Usage Examples
+
+```python
+# Create workflows for specific companies (users)
+workflow = WorkFlow.objects.create(
+    company=company_user,  # User representing the company
+    name_en="Company Workflow"
+)
+
+# Filter workflows by company
+company_workflows = WorkFlow.objects.filter(company=company_user)
+
+# Multi-tenant isolation
+user_workflows = WorkFlow.objects.filter(company=request.user)
+```
+
+This approach provides flexibility for:
+- 🏢 **Multi-tenant SaaS**: Each tenant has a user representing their company
+- 🏛️ **Enterprise**: Companies can be mapped through user profiles or groups
+- 🔒 **Security**: Natural permission boundaries through Django's user system
+- 📊 **Scalability**: Leverage Django's user management and authentication
 
 ## Dependencies
 

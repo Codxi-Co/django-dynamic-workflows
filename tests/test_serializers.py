@@ -79,8 +79,12 @@ class WorkflowApprovalSerializerTest(TestCase):
         self.attachment = attach_workflow_to_object(
             obj=self.user, workflow=self.workflow, user=self.user, auto_start=False
         )
-        self.attachment.current_stage = self.stage1
-        self.attachment.current_pipeline = self.pipeline
+        # Get the cloned stages from the cloned workflow
+        cloned_pipeline = self.attachment.workflow.pipelines.first()
+        cloned_stage1 = cloned_pipeline.stages.get(order=0)
+
+        self.attachment.current_stage = cloned_stage1
+        self.attachment.current_pipeline = cloned_pipeline
         self.attachment.status = WorkflowAttachmentStatus.IN_PROGRESS
         self.attachment.save()
 
@@ -142,9 +146,11 @@ class WorkflowApprovalSerializerTest(TestCase):
 
     def test_resubmission_serializer_validation(self):
         """Test serializer validation for resubmission action."""
+        # Use the cloned stage ID
+        cloned_stage1 = self.attachment.current_stage
         data = {
             "action": ApprovalStatus.NEEDS_RESUBMISSION,
-            "stage_id": self.stage1.id,
+            "stage_id": cloned_stage1.id,
             "reason": "Please update the documentation",
         }
 
@@ -156,7 +162,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         self.assertEqual(
             serializer.validated_data["action"], ApprovalStatus.NEEDS_RESUBMISSION
         )
-        self.assertEqual(serializer.validated_data["stage_id"], self.stage1.id)
+        self.assertEqual(serializer.validated_data["stage_id"], cloned_stage1.id)
 
     def test_delegation_serializer_validation(self):
         """Test serializer validation for delegation action."""

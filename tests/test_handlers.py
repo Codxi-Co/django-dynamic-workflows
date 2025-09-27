@@ -423,4 +423,6 @@ class TestHandlerIntegrationWithApprovalWorkflow:
 
         # Verify attachment state would be updated
         attachment.refresh_from_db()
-        assert attachment.workflow == workflow
+        # Workflow should be cloned, not the original
+        assert attachment.workflow != workflow
+        assert attachment.workflow.cloned_from == workflow

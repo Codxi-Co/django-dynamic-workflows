@@ -231,18 +231,26 @@ def attach_workflow_to_object(
     user: User = None,
     auto_start: bool = True,
     metadata: Dict[str, Any] = None,
+    disable_clone: bool = False,
 ) -> WorkflowAttachment:
     """Attach a workflow to any model instance.
 
+    IMPORTANT: This function automatically clones the workflow by default to ensure
+    workflow immutability. Any changes to the original workflow will not affect
+    running workflows, ensuring data integrity and preventing corruption of active processes.
+
     Args:
         obj: The model instance to attach workflow to
-        workflow: The WorkFlow to attach
+        workflow: The WorkFlow to attach (will be cloned unless disable_clone=True)
         user: User who is attaching the workflow
         auto_start: Whether to automatically start the workflow
         metadata: Additional metadata to store
+        disable_clone: If True, uses original workflow instead of cloning (default: False)
+                      WARNING: Setting this to True may cause workflow corruption
+                      if the original workflow is modified after attachment.
 
     Returns:
-        WorkflowAttachment instance
+        WorkflowAttachment instance with cloned workflow (or original if disable_clone=True)
     """
     from django.contrib.contenttypes.models import ContentType
     from django.utils import timezone
@@ -252,37 +260,60 @@ def attach_workflow_to_object(
             f"Workflow '{workflow.name_en}' is not active and cannot be attached"
         )
 
+    # Clone the workflow to ensure immutability (unless disabled)
+    if disable_clone:
+        logger.warning(
+            f"Using original workflow '{workflow.name_en}' (ID: {workflow.id}) for object {obj} - cloning disabled"
+        )
+        workflow_to_use = workflow
+    else:
+        logger.info(
+            f"Cloning workflow '{workflow.name_en}' (ID: {workflow.id}) for object {obj}"
+        )
+        workflow_to_use = workflow.clone()
+        logger.info(
+            f"Workflow cloned successfully. Original ID: {workflow.id}, Cloned ID: {workflow_to_use.id}"
+        )
+
     content_type = ContentType.objects.get_for_model(obj)
 
-    # Create or get existing attachment
+    # Create or get existing attachment using the workflow (cloned or original)
     attachment, created = WorkflowAttachment.objects.get_or_create(
         content_type=content_type,
         object_id=str(obj.pk),
         defaults={
-            "workflow": workflow,
+            "workflow": workflow_to_use,
             "metadata": metadata or {},
             "started_by": user,
         },
     )
 
     if not created:
-        # Update existing attachment
-        attachment.workflow = workflow
+        # Update existing attachment with workflow (cloned or original)
+        attachment.workflow = workflow_to_use
         attachment.metadata.update(metadata or {})
         attachment.save()
 
     log_workflow_action(
         action="workflow_attached" if created else "workflow_updated",
-        workflow_id=workflow.id,
+        workflow_id=workflow_to_use.id,
         user_id=user.id if user else None,
         object_type=content_type.model,
         object_id=str(obj.pk),
         auto_start=auto_start,
+        original_workflow_id=(
+            workflow.id if not disable_clone else None
+        ),  # Track original workflow for audit
     )
 
-    logger.info(
-        f"Workflow '{workflow.name_en}' {'attached' if created else 'updated'} to {obj._meta.label}({obj.pk})"
-    )
+    if disable_clone:
+        logger.info(
+            f"Original workflow '{workflow.name_en}' {'attached' if created else 'updated'} to {obj._meta.label}({obj.pk})"
+        )
+    else:
+        logger.info(
+            f"Cloned workflow '{workflow_to_use.name_en}' (from '{workflow.name_en}') {'attached' if created else 'updated'} to {obj._meta.label}({obj.pk})"
+        )
 
     # Auto-start if requested
     if auto_start and attachment.status == WorkflowAttachmentStatus.NOT_STARTED:

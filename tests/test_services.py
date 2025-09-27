@@ -102,7 +102,7 @@ class WorkflowServicesTest(TestCase):
         self.workflow.update_active_status()
 
     def test_attach_workflow_to_object(self):
-        """Test attaching workflow to an object."""
+        """Test attaching workflow to an object with automatic cloning."""
         attachment = attach_workflow_to_object(
             obj=self.user,
             workflow=self.workflow,
@@ -112,9 +112,21 @@ class WorkflowServicesTest(TestCase):
         )
 
         self.assertEqual(attachment.target, self.user)
-        self.assertEqual(attachment.workflow, self.workflow)
+        # The attached workflow should be a clone, not the original
+        self.assertNotEqual(attachment.workflow, self.workflow)
+        self.assertEqual(attachment.workflow.cloned_from, self.workflow)
+        self.assertEqual(attachment.workflow.name_en, "Test Workflow (Copy)")
         self.assertEqual(attachment.status, WorkflowAttachmentStatus.NOT_STARTED)
         self.assertEqual(attachment.metadata["test"], "data")
+
+        # Verify the clone has the same structure as the original
+        self.assertEqual(
+            attachment.workflow.pipelines.count(), self.workflow.pipelines.count()
+        )
+        self.assertEqual(
+            attachment.workflow.pipelines.first().stages.count(),
+            self.workflow.pipelines.first().stages.count(),
+        )
 
     @patch("approval_workflow.services.start_flow")
     @patch("django_workflow_engine.utils.build_approval_steps")
@@ -134,8 +146,17 @@ class WorkflowServicesTest(TestCase):
         self.assertEqual(
             modified_attachment.status, WorkflowAttachmentStatus.IN_PROGRESS
         )
-        self.assertEqual(modified_attachment.current_stage, self.stage1)
-        self.assertEqual(modified_attachment.current_pipeline, self.pipeline)
+        # Current stage and pipeline should be from the cloned workflow
+        self.assertEqual(
+            modified_attachment.current_stage.name_en, f"{self.stage1.name_en} (Copy)"
+        )
+        self.assertEqual(
+            modified_attachment.current_pipeline.name_en,
+            f"{self.pipeline.name_en} (Copy)",
+        )
+        # Verify they are cloned versions, not originals
+        self.assertNotEqual(modified_attachment.current_stage, self.stage1)
+        self.assertNotEqual(modified_attachment.current_pipeline, self.pipeline)
         self.assertIsNotNone(modified_attachment.started_at)
 
         # Verify approval flow was started

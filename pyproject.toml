@@ -8,7 +8,7 @@ exclude = ["sandbox*", "tests*"]
 
 [project]
 name = "django-dynamic-workflows"
-version = "1.0.3"
+version = "1.0.4"
 description = "A powerful, configurable Django package for implementing dynamic multi-step workflow processes with database-stored actions"
 authors = [
     { name="Mohamed Ibrahim", email="info@codxi.com" },
