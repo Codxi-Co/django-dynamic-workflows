@@ -2,14 +2,15 @@
 Choice enums for workflow engine and approval workflow statuses and actions.
 """
 
+from django.db import models
+
 # Import approval-related choices from the approval_workflow package
 from approval_workflow.choices import ApprovalStatus, RoleSelectionStrategy
-
-from django.db import models
 
 
 class WorkflowStatus(models.TextChoices):
     """Status choices for workflows."""
+
     ACTIVE = "active", "Active"
     INACTIVE = "inactive", "Inactive"
     DRAFT = "draft", "Draft"
@@ -17,6 +18,7 @@ class WorkflowStatus(models.TextChoices):
 
 class ApprovalTypes(models.TextChoices):
     """Types of approval configurations."""
+
     SELF = "self", "Self Approval"
     ROLE = "role", "Role-based Approval"
     USER = "user", "User-specific Approval"
@@ -24,6 +26,7 @@ class ApprovalTypes(models.TextChoices):
 
 class WorkflowAttachmentStatus(models.TextChoices):
     """Status choices for workflow attachments."""
+
     NOT_STARTED = "not_started", "Not Started"
     IN_PROGRESS = "in_progress", "In Progress"
     COMPLETED = "completed", "Completed"
@@ -33,6 +36,7 @@ class WorkflowAttachmentStatus(models.TextChoices):
 
 class ActionType(models.TextChoices):
     """Types of actions that can be triggered in workflows."""
+
     AFTER_APPROVE = "after_approve", "After Approval"
     AFTER_REJECT = "after_reject", "After Rejection"
     AFTER_RESUBMISSION = "after_resubmission", "After Resubmission"

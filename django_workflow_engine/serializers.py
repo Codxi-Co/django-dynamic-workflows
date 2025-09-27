@@ -5,15 +5,15 @@ from typing import Any, Dict, List, Optional, Union
 
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
-from rest_framework import serializers
 
 from approval_workflow.choices import ApprovalStatus
 from approval_workflow.models import ApprovalInstance
 from approval_workflow.services import advance_flow, get_current_approval_for_object
+from rest_framework import serializers
 
-from .models import WorkflowAttachment, Stage
+from .logging_utils import log_serializer_validation, serializers_logger
+from .models import Stage, WorkflowAttachment
 from .services import get_workflow_attachment
-from .logging_utils import serializers_logger, log_serializer_validation
 
 logger = logging.getLogger(__name__)
 
@@ -29,57 +29,63 @@ class WorkflowApprovalSerializer(serializers.Serializer):
     action = serializers.ChoiceField(
         choices=ApprovalStatus.choices,
         default=ApprovalStatus.APPROVED,
-        help_text=_("Action to perform on the workflow stage")
+        help_text=_("Action to perform on the workflow stage"),
     )
     reason = serializers.CharField(
         required=False,
         allow_blank=True,
-        help_text=_("Reason for rejection, delegation, or resubmission")
+        help_text=_("Reason for rejection, delegation, or resubmission"),
     )
     form_data = serializers.JSONField(
         required=False,
         default=dict,
-        help_text=_("Form data for approval (if required by stage)")
+        help_text=_("Form data for approval (if required by stage)"),
     )
     user_id = serializers.IntegerField(
         required=False,
-        help_text=_("User ID for delegation (required for delegation action)")
+        help_text=_("User ID for delegation (required for delegation action)"),
     )
     stage_id = serializers.IntegerField(
         required=False,
-        help_text=_("Stage ID for resubmission (required for resubmission action)")
+        help_text=_("Stage ID for resubmission (required for resubmission action)"),
     )
 
     def __init__(self, *args, **kwargs):
         """Initialize serializer with object instance."""
-        self.object_instance = kwargs.pop('object_instance', None)
+        self.object_instance = kwargs.pop("object_instance", None)
         super().__init__(*args, **kwargs)
 
     def validate_action(self, value):
         """Validate the action is appropriate for current workflow state."""
         if not self.object_instance:
-            raise serializers.ValidationError(_("Object instance is required for workflow approval"))
+            raise serializers.ValidationError(
+                _("Object instance is required for workflow approval")
+            )
 
         attachment = get_workflow_attachment(self.object_instance)
         if not attachment:
             raise serializers.ValidationError(_("No workflow attached to this object"))
 
-        if attachment.status != 'in_progress':
+        if attachment.status != "in_progress":
             raise serializers.ValidationError(
-                _("Workflow is not in progress (current status: {status})").format(status=attachment.status)
+                _("Workflow is not in progress (current status: {status})").format(
+                    status=attachment.status
+                )
             )
 
         # Check if there are current approval instances
         current_approval = get_current_approval_for_object(self.object_instance)
         if not current_approval:
-            raise serializers.ValidationError(_("No current approval step found for this object"))
+            raise serializers.ValidationError(
+                _("No current approval step found for this object")
+            )
 
         return value
 
     def validate(self, attrs):
         """Validate action-specific requirements."""
-        action = attrs.get('action')
-        user = self.context.get('request').user if self.context.get('request') else None
+        action = attrs.get("action")
+        user = self.context.get("request").user if self.context.get("request") else None
 
         try:
             if action == ApprovalStatus.REJECTED:
@@ -95,7 +101,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             log_serializer_validation(
                 serializer_name="WorkflowApprovalSerializer",
                 is_valid=True,
-                user_id=user.id if user else None
+                user_id=user.id if user else None,
             )
 
             return attrs
@@ -106,26 +112,26 @@ class WorkflowApprovalSerializer(serializers.Serializer):
                 serializer_name="WorkflowApprovalSerializer",
                 is_valid=False,
                 errors=e.detail,
-                user_id=user.id if user else None
+                user_id=user.id if user else None,
             )
             raise
 
     def _validate_rejection(self, attrs):
         """Validate rejection requirements."""
-        if not attrs.get('reason'):
-            raise serializers.ValidationError({
-                'reason': _('Reason is required for rejection')
-            })
+        if not attrs.get("reason"):
+            raise serializers.ValidationError(
+                {"reason": _("Reason is required for rejection")}
+            )
 
     def _validate_resubmission(self, attrs):
         """Validate resubmission requirements."""
-        if not attrs.get('reason'):
-            raise serializers.ValidationError({
-                'reason': 'Reason is required for resubmission'
-            })
+        if not attrs.get("reason"):
+            raise serializers.ValidationError(
+                {"reason": "Reason is required for resubmission"}
+            )
 
         # stage_id is optional - if not provided, resubmission goes to current stage
-        stage_id = attrs.get('stage_id')
+        stage_id = attrs.get("stage_id")
         if stage_id:
             # Validate stage exists and belongs to current workflow
             try:
@@ -134,31 +140,28 @@ class WorkflowApprovalSerializer(serializers.Serializer):
 
                 # Check if stage belongs to current workflow
                 if stage.pipeline.workflow.id != attachment.workflow.id:
-                    raise serializers.ValidationError({
-                        'stage_id': 'Stage does not belong to current workflow'
-                    })
+                    raise serializers.ValidationError(
+                        {"stage_id": "Stage does not belong to current workflow"}
+                    )
 
             except Stage.DoesNotExist:
-                raise serializers.ValidationError({
-                    'stage_id': 'Invalid stage ID'
-                })
+                raise serializers.ValidationError({"stage_id": "Invalid stage ID"})
 
     def _validate_delegation(self, attrs):
         """Validate delegation requirements."""
         # user_id is optional for delegation - if not provided, the approval workflow
         # will handle the delegation logic internally
-        user_id = attrs.get('user_id')
+        user_id = attrs.get("user_id")
         if user_id:
             # Validate user exists only if user_id is provided
             from django.contrib.auth import get_user_model
+
             User = get_user_model()
 
             try:
                 User.objects.get(pk=user_id)
             except User.DoesNotExist:
-                raise serializers.ValidationError({
-                    'user_id': 'Invalid user ID'
-                })
+                raise serializers.ValidationError({"user_id": "Invalid user ID"})
 
     def _validate_approval(self, attrs):
         """Validate approval requirements."""
@@ -168,16 +171,20 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             current_approval = get_current_approval_for_object(self.object_instance)
 
             # Handle both single instance and list/queryset
-            if hasattr(current_approval, '__iter__') and not isinstance(current_approval, (str, bytes)):
-                current_approval = list(current_approval)[0] if current_approval else None
+            if hasattr(current_approval, "__iter__") and not isinstance(
+                current_approval, (str, bytes)
+            ):
+                current_approval = (
+                    list(current_approval)[0] if current_approval else None
+                )
 
             if current_approval and current_approval.form:
                 # Form is required - validate form_data is provided
-                form_data = attrs.get('form_data', {})
+                form_data = attrs.get("form_data", {})
                 if not form_data:
-                    raise serializers.ValidationError({
-                        'form_data': 'Form data is required for this approval step'
-                    })
+                    raise serializers.ValidationError(
+                        {"form_data": "Form data is required for this approval step"}
+                    )
 
     def save(self, **kwargs):
         """Process the workflow approval action."""
@@ -185,18 +192,22 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             raise ValueError("Object instance is required for workflow approval")
 
         validated_data = self.validated_data
-        action = validated_data['action']
-        user = self.context.get('request').user if self.context.get('request') else None
+        action = validated_data["action"]
+        user = self.context.get("request").user if self.context.get("request") else None
 
         # Log the approval action attempt
         attachment = get_workflow_attachment(self.object_instance)
         serializers_logger.log_approval_action(
-            action=action.value if hasattr(action, 'value') else str(action),
+            action=action.value if hasattr(action, "value") else str(action),
             workflow_id=attachment.workflow.id if attachment else None,
-            stage=attachment.current_stage.name_en if attachment and attachment.current_stage else "unknown",
+            stage=(
+                attachment.current_stage.name_en
+                if attachment and attachment.current_stage
+                else "unknown"
+            ),
             user_id=user.id if user else None,
             object_type=self.object_instance._meta.label,
-            object_id=str(self.object_instance.pk)
+            object_id=str(self.object_instance.pk),
         )
 
         try:
@@ -204,7 +215,9 @@ class WorkflowApprovalSerializer(serializers.Serializer):
                 # Prepare resubmission steps if needed
                 resubmission_steps = None
                 if action == ApprovalStatus.NEEDS_RESUBMISSION:
-                    resubmission_steps = self._prepare_resubmission_steps(validated_data)
+                    resubmission_steps = self._prepare_resubmission_steps(
+                        validated_data
+                    )
 
                 # Prepare delegation user if needed
                 delegate_to_user = None
@@ -216,8 +229,8 @@ class WorkflowApprovalSerializer(serializers.Serializer):
                     instance=self.object_instance,
                     action=action,
                     user=user,
-                    comment=validated_data.get('reason', ''),
-                    form_data=validated_data.get('form_data'),
+                    comment=validated_data.get("reason", ""),
+                    form_data=validated_data.get("form_data"),
                     delegate_to=delegate_to_user,
                     resubmission_steps=resubmission_steps,
                 )
@@ -229,34 +242,43 @@ class WorkflowApprovalSerializer(serializers.Serializer):
 
         except Exception as e:
             logger.error(f"Error processing workflow approval action: {str(e)}")
-            raise serializers.ValidationError({
-                'error': f'Failed to process approval action: {str(e)}'
-            })
+            raise serializers.ValidationError(
+                {"error": f"Failed to process approval action: {str(e)}"}
+            )
 
     def _prepare_resubmission_steps(self, validated_data):
         """Prepare resubmission steps for the specified stage."""
-        stage_id = validated_data['stage_id']
+        stage_id = validated_data["stage_id"]
 
         try:
             stage = Stage.objects.select_related("pipeline__workflow").get(pk=stage_id)
 
             # Get current approval flow
             current_approval = get_current_approval_for_object(self.object_instance)
-            if hasattr(current_approval, '__iter__') and not isinstance(current_approval, (str, bytes)):
-                current_approval = list(current_approval)[0] if current_approval else None
+            if hasattr(current_approval, "__iter__") and not isinstance(
+                current_approval, (str, bytes)
+            ):
+                current_approval = (
+                    list(current_approval)[0] if current_approval else None
+                )
 
             if not current_approval:
                 raise ValueError("No current approval found for resubmission")
 
             # Build resubmission steps using workflow handler pattern
-            from .handlers import ApprovalStepBuilder
             from django.contrib.auth import get_user_model
 
+            from .handlers import ApprovalStepBuilder
+
             User = get_user_model()
-            created_by = getattr(self.object_instance, 'created_by', None)
+            created_by = getattr(self.object_instance, "created_by", None)
             if not created_by:
                 # Fallback to request user
-                created_by = self.context.get('request').user if self.context.get('request') else None
+                created_by = (
+                    self.context.get("request").user
+                    if self.context.get("request")
+                    else None
+                )
 
             if created_by and not isinstance(created_by, User):
                 created_by = User.objects.get(pk=created_by)
@@ -279,9 +301,10 @@ class WorkflowApprovalSerializer(serializers.Serializer):
 
     def _get_delegation_user(self, validated_data):
         """Get the user for delegation."""
-        user_id = validated_data['user_id']
+        user_id = validated_data["user_id"]
 
         from django.contrib.auth import get_user_model
+
         User = get_user_model()
 
         try:
@@ -296,17 +319,18 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             return
 
         if action == ApprovalStatus.REJECTED:
-            attachment.status = 'rejected'
+            attachment.status = "rejected"
             attachment.save()
 
             # Call workflow hooks
             from .services import _call_workflow_hook
+
             _call_workflow_hook(
                 attachment,
-                'after_reject_stage',
+                "after_reject_stage",
                 self.object_instance,
                 attachment.current_stage,
-                attachment
+                attachment,
             )
 
         # Note: Approval progression to next stage is handled by the approval workflow
@@ -322,14 +346,27 @@ class WorkflowAttachmentSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkflowAttachment
         fields = [
-            'id', 'workflow', 'content_type', 'object_id',
-            'current_stage', 'current_pipeline', 'status',
-            'started_at', 'completed_at', 'started_by',
-            'progress_info', 'target_object_repr', 'metadata'
+            "id",
+            "workflow",
+            "content_type",
+            "object_id",
+            "current_stage",
+            "current_pipeline",
+            "status",
+            "started_at",
+            "completed_at",
+            "started_by",
+            "progress_info",
+            "target_object_repr",
+            "metadata",
         ]
         read_only_fields = [
-            'content_type', 'object_id', 'started_at',
-            'completed_at', 'progress_info', 'target_object_repr'
+            "content_type",
+            "object_id",
+            "started_at",
+            "completed_at",
+            "progress_info",
+            "target_object_repr",
         ]
 
     def get_progress_info(self, obj):

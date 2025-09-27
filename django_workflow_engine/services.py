@@ -7,44 +7,59 @@ Approval flow functionality is handled by the django-approval-workflow package.
 import logging
 from typing import Any, Dict, List, Optional, Type
 
-from approval_workflow.models import ApprovalFlow
 from django.contrib.auth import get_user_model
 from django.db.models import Model
 from django.utils import timezone
 
-from .models import WorkFlow, Pipeline, Stage, WorkflowAttachment, WorkflowConfiguration, WorkflowAction
-from .choices import WorkflowAttachmentStatus, ActionType, DEFAULT_ACTIONS
+from approval_workflow.models import ApprovalFlow
+
+from .choices import DEFAULT_ACTIONS, ActionType, WorkflowAttachmentStatus
+from .models import (
+    Pipeline,
+    Stage,
+    WorkFlow,
+    WorkflowAction,
+    WorkflowAttachment,
+    WorkflowConfiguration,
+)
 
 logger = logging.getLogger(__name__)
 
 User = get_user_model()
 
 
-def log_workflow_action(action: str, workflow_id: int = None, user_id: int = None,
-                       object_type: str = None, object_id: str = None, **kwargs):
+def log_workflow_action(
+    action: str,
+    workflow_id: int = None,
+    user_id: int = None,
+    object_type: str = None,
+    object_id: str = None,
+    **kwargs,
+):
     """Log workflow actions with structured data for monitoring and debugging."""
     logger.info(
         f"WORKFLOW_ACTION: {action}",
         extra={
-            'action': action,
-            'workflow_id': workflow_id,
-            'user_id': user_id,
-            'object_type': object_type,
-            'object_id': object_id,
-            'timestamp': timezone.now().isoformat(),
-            **kwargs
-        }
+            "action": action,
+            "workflow_id": workflow_id,
+            "user_id": user_id,
+            "object_type": object_type,
+            "object_id": object_id,
+            "timestamp": timezone.now().isoformat(),
+            **kwargs,
+        },
     )
 
 
 # Workflow management services
+
 
 def create_workflow(
     company,
     name_en: str,
     name_ar: str,
     created_by: User,
-    pipelines_data: List[Dict[str, Any]]
+    pipelines_data: List[Dict[str, Any]],
 ) -> WorkFlow:
     """Create a new workflow with pipelines and stages.
 
@@ -59,10 +74,7 @@ def create_workflow(
         The created WorkFlow instance
     """
     workflow = WorkFlow.objects.create(
-        company=company,
-        name_en=name_en,
-        name_ar=name_ar,
-        created_by=created_by
+        company=company, name_en=name_en, name_ar=name_ar, created_by=created_by
     )
 
     log_workflow_action(
@@ -70,7 +82,7 @@ def create_workflow(
         workflow_id=workflow.id,
         user_id=created_by.id,
         company_id=company.id,
-        pipeline_count=len(pipelines_data)
+        pipeline_count=len(pipelines_data),
     )
 
     for pipeline_data in pipelines_data:
@@ -80,16 +92,14 @@ def create_workflow(
         "Workflow created - ID: %s, Name: %s, Pipelines: %d",
         workflow.id,
         name_en,
-        len(pipelines_data)
+        len(pipelines_data),
     )
 
     return workflow
 
 
 def create_pipeline(
-    workflow: WorkFlow,
-    pipeline_data: Dict[str, Any],
-    created_by: User
+    workflow: WorkFlow, pipeline_data: Dict[str, Any], created_by: User
 ) -> Pipeline:
     """Create a pipeline within a workflow.
 
@@ -104,15 +114,15 @@ def create_pipeline(
     pipeline = Pipeline.objects.create(
         workflow=workflow,
         company=workflow.company,
-        name_en=pipeline_data['name_en'],
-        name_ar=pipeline_data['name_ar'],
-        department_id=pipeline_data['department_id'],
+        name_en=pipeline_data["name_en"],
+        name_ar=pipeline_data["name_ar"],
+        department_id=pipeline_data["department_id"],
         created_by=created_by,
-        order=pipeline_data.get('order', 0)
+        order=pipeline_data.get("order", 0),
     )
 
     # Create stages for the pipeline
-    number_of_stages = pipeline_data.get('number_of_stages', 1)
+    number_of_stages = pipeline_data.get("number_of_stages", 1)
     for i in range(number_of_stages):
         Stage.objects.create(
             pipeline=pipeline,
@@ -120,14 +130,14 @@ def create_pipeline(
             name_en=f"Stage {i + 1}",
             name_ar=f"المرحلة {i + 1}",
             created_by=created_by,
-            order=i
+            order=i,
         )
 
     logger.info(
         "Pipeline created - ID: %s, Workflow: %s, Stages: %d",
         pipeline.id,
         workflow.name_en,
-        number_of_stages
+        number_of_stages,
     )
 
     return pipeline
@@ -145,34 +155,35 @@ def get_workflow_progress(workflow: WorkFlow, obj: Model) -> Dict[str, Any]:
     """
     try:
         from django.contrib.contenttypes.models import ContentType
+
         content_type = ContentType.objects.get_for_model(obj)
 
         attachment = WorkflowAttachment.objects.get(
-            content_type=content_type,
-            object_id=str(obj.pk)
+            content_type=content_type, object_id=str(obj.pk)
         )
 
         return attachment.get_progress_info()
     except WorkflowAttachment.DoesNotExist:
         return {
-            'current_stage': None,
-            'current_pipeline': None,
-            'status': WorkflowAttachmentStatus.NOT_STARTED,
-            'progress_percentage': 0,
-            'started_at': None,
-            'completed_at': None,
-            'next_stage': None,
+            "current_stage": None,
+            "current_pipeline": None,
+            "status": WorkflowAttachmentStatus.NOT_STARTED,
+            "progress_percentage": 0,
+            "started_at": None,
+            "completed_at": None,
+            "next_stage": None,
         }
 
 
 # Workflow Attachment Services
+
 
 def attach_workflow_to_object(
     obj: Model,
     workflow: WorkFlow,
     user: User = None,
     auto_start: bool = True,
-    metadata: Dict[str, Any] = None
+    metadata: Dict[str, Any] = None,
 ) -> WorkflowAttachment:
     """Attach a workflow to any model instance.
 
@@ -190,7 +201,9 @@ def attach_workflow_to_object(
     from django.utils import timezone
 
     if not workflow.is_active:
-        raise ValueError(f"Workflow '{workflow.name_en}' is not active and cannot be attached")
+        raise ValueError(
+            f"Workflow '{workflow.name_en}' is not active and cannot be attached"
+        )
 
     content_type = ContentType.objects.get_for_model(obj)
 
@@ -199,10 +212,10 @@ def attach_workflow_to_object(
         content_type=content_type,
         object_id=str(obj.pk),
         defaults={
-            'workflow': workflow,
-            'metadata': metadata or {},
-            'started_by': user,
-        }
+            "workflow": workflow,
+            "metadata": metadata or {},
+            "started_by": user,
+        },
     )
 
     if not created:
@@ -217,7 +230,7 @@ def attach_workflow_to_object(
         user_id=user.id if user else None,
         object_type=content_type.model,
         object_id=str(obj.pk),
-        auto_start=auto_start
+        auto_start=auto_start,
     )
 
     logger.info(
@@ -248,8 +261,7 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
 
     try:
         attachment = WorkflowAttachment.objects.get(
-            content_type=content_type,
-            object_id=str(obj.pk)
+            content_type=content_type, object_id=str(obj.pk)
         )
     except WorkflowAttachment.DoesNotExist:
         raise ValueError(f"No workflow attached to {obj._meta.label}({obj.pk})")
@@ -258,11 +270,11 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
         raise ValueError(f"Workflow already started (status: {attachment.status})")
 
     # Get first stage
-    first_pipeline = attachment.workflow.pipelines.order_by('order').first()
+    first_pipeline = attachment.workflow.pipelines.order_by("order").first()
     if not first_pipeline:
         raise ValueError(f"Workflow '{attachment.workflow.name_en}' has no pipelines")
 
-    first_stage = first_pipeline.stages.order_by('order').first()
+    first_stage = first_pipeline.stages.order_by("order").first()
     if not first_stage:
         raise ValueError(f"Pipeline '{first_pipeline.name_en}' has no stages")
 
@@ -275,11 +287,13 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
     attachment.save()
 
     # Trigger workflow start actions
-    trigger_workflow_event(attachment, ActionType.ON_WORKFLOW_START,
-                          initial_stage=first_stage, user=user)
+    trigger_workflow_event(
+        attachment, ActionType.ON_WORKFLOW_START, initial_stage=first_stage, user=user
+    )
 
     # Start approval flow for first stage
     from approval_workflow.services import start_flow
+
     from .utils import build_approval_steps
 
     steps = build_approval_steps(first_stage, user or obj.created_by)
@@ -312,8 +326,7 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
 
     try:
         attachment = WorkflowAttachment.objects.get(
-            content_type=content_type,
-            object_id=str(obj.pk)
+            content_type=content_type, object_id=str(obj.pk)
         )
     except WorkflowAttachment.DoesNotExist:
         raise ValueError(f"No workflow attached to {obj._meta.label}({obj.pk})")
@@ -344,15 +357,26 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
     # Trigger workflow actions
     if pipeline_changed:
         # Trigger pipeline move actions
-        trigger_workflow_event(attachment, ActionType.AFTER_MOVE_PIPELINE,
-                              from_pipeline=old_pipeline, to_pipeline=next_pipeline, user=user)
+        trigger_workflow_event(
+            attachment,
+            ActionType.AFTER_MOVE_PIPELINE,
+            from_pipeline=old_pipeline,
+            to_pipeline=next_pipeline,
+            user=user,
+        )
 
     # Trigger stage move actions
-    trigger_workflow_event(attachment, ActionType.AFTER_MOVE_STAGE,
-                          from_stage=old_stage, to_stage=next_stage, user=user)
+    trigger_workflow_event(
+        attachment,
+        ActionType.AFTER_MOVE_STAGE,
+        from_stage=old_stage,
+        to_stage=next_stage,
+        user=user,
+    )
 
     # Start approval flow for next stage
     from approval_workflow.services import start_flow
+
     from .utils import build_approval_steps
 
     steps = build_approval_steps(next_stage, user or obj.created_by)
@@ -366,7 +390,9 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
     return attachment
 
 
-def reject_workflow_stage(obj: Model, stage, user: User = None, reason: str = None) -> WorkflowAttachment:
+def reject_workflow_stage(
+    obj: Model, stage, user: User = None, reason: str = None
+) -> WorkflowAttachment:
     """Reject workflow at current stage.
 
     Args:
@@ -385,8 +411,7 @@ def reject_workflow_stage(obj: Model, stage, user: User = None, reason: str = No
 
     try:
         attachment = WorkflowAttachment.objects.get(
-            content_type=content_type,
-            object_id=str(obj.pk)
+            content_type=content_type, object_id=str(obj.pk)
         )
     except WorkflowAttachment.DoesNotExist:
         raise ValueError(f"No workflow attached to {obj._meta.label}({obj.pk})")
@@ -395,13 +420,14 @@ def reject_workflow_stage(obj: Model, stage, user: User = None, reason: str = No
     attachment.status = WorkflowAttachmentStatus.REJECTED
     attachment.completed_at = timezone.now()
     if reason:
-        attachment.metadata['rejection_reason'] = reason
-        attachment.metadata['rejected_by'] = user.username if user else 'system'
+        attachment.metadata["rejection_reason"] = reason
+        attachment.metadata["rejected_by"] = user.username if user else "system"
     attachment.save()
 
     # Trigger reject actions
-    trigger_workflow_event(attachment, ActionType.AFTER_REJECT,
-                          stage=stage, reason=reason, user=user)
+    trigger_workflow_event(
+        attachment, ActionType.AFTER_REJECT, stage=stage, reason=reason, user=user
+    )
 
     logger.info(
         f"Workflow rejected for {obj._meta.label}({obj.pk}) at stage '{stage.name_en}'"
@@ -427,8 +453,7 @@ def complete_workflow(obj: Model, user: User = None) -> WorkflowAttachment:
 
     try:
         attachment = WorkflowAttachment.objects.get(
-            content_type=content_type,
-            object_id=str(obj.pk)
+            content_type=content_type, object_id=str(obj.pk)
         )
     except WorkflowAttachment.DoesNotExist:
         raise ValueError(f"No workflow attached to {obj._meta.label}({obj.pk})")
@@ -441,9 +466,7 @@ def complete_workflow(obj: Model, user: User = None) -> WorkflowAttachment:
     # Trigger workflow complete actions
     trigger_workflow_event(attachment, ActionType.ON_WORKFLOW_COMPLETE, user=user)
 
-    logger.info(
-        f"Workflow completed for {obj._meta.label}({obj.pk})"
-    )
+    logger.info(f"Workflow completed for {obj._meta.label}({obj.pk})")
 
     return attachment
 
@@ -455,7 +478,7 @@ def register_model_for_workflow(
     status_field: str = None,
     stage_field: str = None,
     pre_start_hook: str = None,
-    post_complete_hook: str = None
+    post_complete_hook: str = None,
 ) -> WorkflowConfiguration:
     """Register a model to support workflow functionality.
 
@@ -478,13 +501,13 @@ def register_model_for_workflow(
     config, created = WorkflowConfiguration.objects.get_or_create(
         content_type=content_type,
         defaults={
-            'auto_start_workflow': auto_start,
-            'default_workflow': default_workflow,
-            'status_field': status_field or '',
-            'stage_field': stage_field or '',
-            'pre_start_hook': pre_start_hook or '',
-            'post_complete_hook': post_complete_hook or '',
-        }
+            "auto_start_workflow": auto_start,
+            "default_workflow": default_workflow,
+            "status_field": status_field or "",
+            "stage_field": stage_field or "",
+            "pre_start_hook": pre_start_hook or "",
+            "post_complete_hook": post_complete_hook or "",
+        },
     )
 
     if not created:
@@ -504,8 +527,6 @@ def register_model_for_workflow(
     return config
 
 
-
-
 def get_workflow_attachment(obj: Model) -> Optional[WorkflowAttachment]:
     """Get workflow attachment for an object.
 
@@ -521,8 +542,7 @@ def get_workflow_attachment(obj: Model) -> Optional[WorkflowAttachment]:
 
     try:
         return WorkflowAttachment.objects.get(
-            content_type=content_type,
-            object_id=str(obj.pk)
+            content_type=content_type, object_id=str(obj.pk)
         )
     except WorkflowAttachment.DoesNotExist:
         return None
@@ -549,7 +569,10 @@ def is_model_workflow_enabled(model_class: Type[Model]) -> bool:
 
 # Action execution services
 
-def get_actions_for_event(attachment: WorkflowAttachment, action_type: str) -> List[WorkflowAction]:
+
+def get_actions_for_event(
+    attachment: WorkflowAttachment, action_type: str
+) -> List[WorkflowAction]:
     """Get all actions for a specific event type using inheritance system.
 
     Priority order: Stage -> Pipeline -> Workflow -> Default
@@ -566,10 +589,8 @@ def get_actions_for_event(attachment: WorkflowAttachment, action_type: str) -> L
     # Stage-level actions (highest priority)
     if attachment.current_stage:
         stage_actions = WorkflowAction.objects.filter(
-            stage=attachment.current_stage,
-            action_type=action_type,
-            is_active=True
-        ).order_by('order')
+            stage=attachment.current_stage, action_type=action_type, is_active=True
+        ).order_by("order")
         actions.extend(stage_actions)
 
     # Pipeline-level actions (if no stage actions found)
@@ -577,17 +598,15 @@ def get_actions_for_event(attachment: WorkflowAttachment, action_type: str) -> L
         pipeline_actions = WorkflowAction.objects.filter(
             pipeline=attachment.current_pipeline,
             action_type=action_type,
-            is_active=True
-        ).order_by('order')
+            is_active=True,
+        ).order_by("order")
         actions.extend(pipeline_actions)
 
     # Workflow-level actions (if no pipeline actions found)
     if not actions and attachment.workflow:
         workflow_actions = WorkflowAction.objects.filter(
-            workflow=attachment.workflow,
-            action_type=action_type,
-            is_active=True
-        ).order_by('order')
+            workflow=attachment.workflow, action_type=action_type, is_active=True
+        ).order_by("order")
         actions.extend(workflow_actions)
 
     # Default actions (if no workflow actions found)
@@ -602,7 +621,7 @@ def get_actions_for_event(attachment: WorkflowAttachment, action_type: str) -> L
                 function_path=f"django_workflow_engine.default_actions.{default_function}",
                 is_active=True,
                 parameters={},
-                order=0
+                order=0,
             )
             actions.append(default_action)
         except Exception as e:
@@ -611,7 +630,9 @@ def get_actions_for_event(attachment: WorkflowAttachment, action_type: str) -> L
     return actions
 
 
-def execute_action_function(function_path: str, context: Dict[str, Any], parameters: Dict[str, Any] = None) -> Any:
+def execute_action_function(
+    function_path: str, context: Dict[str, Any], parameters: Dict[str, Any] = None
+) -> Any:
     """Execute an action function by its path.
 
     Args:
@@ -626,7 +647,7 @@ def execute_action_function(function_path: str, context: Dict[str, Any], paramet
 
     try:
         # Parse the function path
-        module_path, function_name = function_path.rsplit('.', 1)
+        module_path, function_name = function_path.rsplit(".", 1)
 
         # Import the module
         module = importlib.import_module(module_path)
@@ -646,17 +667,23 @@ def execute_action_function(function_path: str, context: Dict[str, Any], paramet
         return result
 
     except ImportError as e:
-        logger.error(f"Failed to import module for action function {function_path}: {str(e)}")
+        logger.error(
+            f"Failed to import module for action function {function_path}: {str(e)}"
+        )
         return None
     except AttributeError as e:
-        logger.error(f"Function {function_name} not found in module {module_path}: {str(e)}")
+        logger.error(
+            f"Function {function_name} not found in module {module_path}: {str(e)}"
+        )
         return None
     except Exception as e:
         logger.error(f"Error executing action function {function_path}: {str(e)}")
         return None
 
 
-def execute_workflow_actions(attachment: WorkflowAttachment, action_type: str, context: Dict[str, Any]) -> List[Any]:
+def execute_workflow_actions(
+    attachment: WorkflowAttachment, action_type: str, context: Dict[str, Any]
+) -> List[Any]:
     """Execute all actions for a workflow event.
 
     Args:
@@ -675,7 +702,7 @@ def execute_workflow_actions(attachment: WorkflowAttachment, action_type: str, c
             result = execute_action_function(
                 function_path=action.function_path,
                 context=context,
-                parameters=action.parameters
+                parameters=action.parameters,
             )
             results.append(result)
 
@@ -688,7 +715,9 @@ def execute_workflow_actions(attachment: WorkflowAttachment, action_type: str, c
     return results
 
 
-def trigger_workflow_event(attachment: WorkflowAttachment, action_type: str, **context_kwargs) -> List[Any]:
+def trigger_workflow_event(
+    attachment: WorkflowAttachment, action_type: str, **context_kwargs
+) -> List[Any]:
     """Trigger a workflow event and execute associated actions.
 
     Args:
@@ -701,13 +730,13 @@ def trigger_workflow_event(attachment: WorkflowAttachment, action_type: str, **c
     """
     # Build context
     context = {
-        'attachment': attachment,
-        'obj': attachment.target,
-        'workflow': attachment.workflow,
-        'current_stage': attachment.current_stage,
-        'current_pipeline': attachment.current_pipeline,
-        'action_type': action_type,
-        **context_kwargs
+        "attachment": attachment,
+        "obj": attachment.target,
+        "workflow": attachment.workflow,
+        "current_stage": attachment.current_stage,
+        "current_pipeline": attachment.current_pipeline,
+        "action_type": action_type,
+        **context_kwargs,
     }
 
     logger.info(

@@ -1,16 +1,25 @@
 """Test cases for workflow engine models."""
 
-import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.test import TestCase
 
+import pytest
 from approval_workflow.models import ApprovalFlow
-from django_workflow_engine.choices import WorkflowStatus, ActionType, WorkflowAttachmentStatus
+
+from django_workflow_engine.choices import (
+    ActionType,
+    WorkflowAttachmentStatus,
+    WorkflowStatus,
+)
 from django_workflow_engine.models import (
-    WorkFlow, Pipeline, Stage, WorkflowAttachment,
-    WorkflowConfiguration, WorkflowAction
+    Pipeline,
+    Stage,
+    WorkFlow,
+    WorkflowAction,
+    WorkflowAttachment,
+    WorkflowConfiguration,
 )
 from sandbox.testapp.models import Company, Department
 
@@ -22,27 +31,29 @@ class WorkFlowModelTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
         # Create a real company for testing
-        self.company = Company.objects.create(name='Test Company')
-        self.department = Department.objects.create(name='Test Department', company=self.company)
-        self.department = Department.objects.create(name='Test Department', company=self.company)
+        self.company = Company.objects.create(name="Test Company")
+        self.department = Department.objects.create(
+            name="Test Department", company=self.company
+        )
+        self.department = Department.objects.create(
+            name="Test Department", company=self.company
+        )
 
     def test_workflow_creation(self):
         """Test creating a workflow."""
         workflow = WorkFlow.objects.create(
             company=self.company,
-            name_en='Test Workflow',
-            name_ar='سير عمل تجريبي',
-            description='Test workflow description',
+            name_en="Test Workflow",
+            name_ar="سير عمل تجريبي",
+            description="Test workflow description",
             status=WorkflowStatus.ACTIVE,
-            created_by=self.user
+            created_by=self.user,
         )
 
-        self.assertEqual(workflow.name_en, 'Test Workflow')
+        self.assertEqual(workflow.name_en, "Test Workflow")
         self.assertEqual(workflow.status, WorkflowStatus.ACTIVE)
         self.assertFalse(workflow.is_active)  # No pipelines yet
 
@@ -50,30 +61,30 @@ class WorkFlowModelTest(TestCase):
         """Test workflow is_active property with complete pipelines."""
         workflow = WorkFlow.objects.create(
             company=self.company,
-            name_en='Test Workflow',
-            name_ar='سير عمل تجريبي',
+            name_en="Test Workflow",
+            name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
-            created_by=self.user
+            created_by=self.user,
         )
 
         # Create pipeline with stages
         pipeline = Pipeline.objects.create(
             workflow=workflow,
             company=self.company,
-            name_en='Test Pipeline',
-            name_ar='خط أنابيب تجريبي',
+            name_en="Test Pipeline",
+            name_ar="خط أنابيب تجريبي",
             department=self.department,
-            created_by=self.user
+            created_by=self.user,
         )
 
         Stage.objects.create(
             pipeline=pipeline,
             company=self.company,
-            name_en='Stage 1',
-            name_ar='المرحلة 1',
+            name_en="Stage 1",
+            name_ar="المرحلة 1",
             created_by=self.user,
             order=0,
-            is_active=True
+            is_active=True,
         )
 
         # Refresh workflow
@@ -86,19 +97,19 @@ class PipelineModelTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
-        self.company = Company.objects.create(name='Test Company')
-        self.department = Department.objects.create(name='Test Department', company=self.company)
+        self.company = Company.objects.create(name="Test Company")
+        self.department = Department.objects.create(
+            name="Test Department", company=self.company
+        )
 
         self.workflow = WorkFlow.objects.create(
             company=self.company,
-            name_en='Test Workflow',
-            name_ar='سير عمل تجريبي',
+            name_en="Test Workflow",
+            name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
-            created_by=self.user
+            created_by=self.user,
         )
 
     def test_pipeline_creation(self):
@@ -106,14 +117,14 @@ class PipelineModelTest(TestCase):
         pipeline = Pipeline.objects.create(
             workflow=self.workflow,
             company=self.company,
-            name_en='Test Pipeline',
-            name_ar='خط أنابيب تجريبي',
+            name_en="Test Pipeline",
+            name_ar="خط أنابيب تجريبي",
             department=self.department,
             created_by=self.user,
-            order=0
+            order=0,
         )
 
-        self.assertEqual(pipeline.name_en, 'Test Pipeline')
+        self.assertEqual(pipeline.name_en, "Test Pipeline")
         self.assertEqual(pipeline.workflow, self.workflow)
         self.assertEqual(pipeline.order, 0)
 
@@ -122,28 +133,28 @@ class PipelineModelTest(TestCase):
         pipeline = Pipeline.objects.create(
             workflow=self.workflow,
             company=self.company,
-            name_en='Test Pipeline',
-            name_ar='خط أنابيب تجريبي',
+            name_en="Test Pipeline",
+            name_ar="خط أنابيب تجريبي",
             department=self.department,
-            created_by=self.user
+            created_by=self.user,
         )
 
         stage1 = Stage.objects.create(
             pipeline=pipeline,
             company=self.company,
-            name_en='Stage 1',
-            name_ar='المرحلة 1',
+            name_en="Stage 1",
+            name_ar="المرحلة 1",
             created_by=self.user,
-            order=0
+            order=0,
         )
 
         stage2 = Stage.objects.create(
             pipeline=pipeline,
             company=self.company,
-            name_en='Stage 2',
-            name_ar='المرحلة 2',
+            name_en="Stage 2",
+            name_ar="المرحلة 2",
             created_by=self.user,
-            order=1
+            order=1,
         )
 
         self.assertEqual(pipeline.stages.count(), 2)
@@ -156,36 +167,36 @@ class WorkflowActionModelTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
-        self.company = Company.objects.create(name='Test Company')
-        self.department = Department.objects.create(name='Test Department', company=self.company)
+        self.company = Company.objects.create(name="Test Company")
+        self.department = Department.objects.create(
+            name="Test Department", company=self.company
+        )
 
         self.workflow = WorkFlow.objects.create(
             company=self.company,
-            name_en='Test Workflow',
-            name_ar='سير عمل تجريبي',
+            name_en="Test Workflow",
+            name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
-            created_by=self.user
+            created_by=self.user,
         )
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
             company=self.company,
-            name_en='Test Pipeline',
-            name_ar='خط أنابيب تجريبي',
+            name_en="Test Pipeline",
+            name_ar="خط أنابيب تجريبي",
             department=self.department,
-            created_by=self.user
+            created_by=self.user,
         )
 
         self.stage = Stage.objects.create(
             pipeline=self.pipeline,
             company=self.company,
-            name_en='Test Stage',
-            name_ar='مرحلة تجريبية',
-            created_by=self.user
+            name_en="Test Stage",
+            name_ar="مرحلة تجريبية",
+            created_by=self.user,
         )
 
     def test_workflow_action_creation(self):
@@ -193,13 +204,13 @@ class WorkflowActionModelTest(TestCase):
         action = WorkflowAction.objects.create(
             workflow=self.workflow,
             action_type=ActionType.AFTER_APPROVE,
-            function_path='django_workflow_engine.default_actions.default_send_email_after_approve',
+            function_path="django_workflow_engine.default_actions.default_send_email_after_approve",
             is_active=True,
-            order=0
+            order=0,
         )
 
         self.assertEqual(action.action_type, ActionType.AFTER_APPROVE)
-        self.assertEqual(action.scope_level, 'workflow')
+        self.assertEqual(action.scope_level, "workflow")
         self.assertEqual(action.scope_object, self.workflow)
 
     def test_stage_action_creation(self):
@@ -207,23 +218,23 @@ class WorkflowActionModelTest(TestCase):
         action = WorkflowAction.objects.create(
             stage=self.stage,
             action_type=ActionType.AFTER_APPROVE,
-            function_path='myapp.custom_actions.custom_approval_action',
+            function_path="myapp.custom_actions.custom_approval_action",
             is_active=True,
             order=0,
-            parameters={'custom_param': 'value'}
+            parameters={"custom_param": "value"},
         )
 
-        self.assertEqual(action.scope_level, 'stage')
+        self.assertEqual(action.scope_level, "stage")
         self.assertEqual(action.scope_object, self.stage)
-        self.assertEqual(action.parameters['custom_param'], 'value')
+        self.assertEqual(action.parameters["custom_param"], "value")
 
     def test_action_scope_validation(self):
         """Test that exactly one scope must be set."""
         # Test creating action with no scope (should fail validation)
         action = WorkflowAction(
             action_type=ActionType.AFTER_APPROVE,
-            function_path='test.function',
-            is_active=True
+            function_path="test.function",
+            is_active=True,
         )
 
         with self.assertRaises(ValidationError):
@@ -234,8 +245,8 @@ class WorkflowActionModelTest(TestCase):
             workflow=self.workflow,
             stage=self.stage,  # Multiple scopes
             action_type=ActionType.AFTER_APPROVE,
-            function_path='test.function',
-            is_active=True
+            function_path="test.function",
+            is_active=True,
         )
 
         with self.assertRaises(ValidationError):
@@ -247,38 +258,38 @@ class WorkflowAttachmentModelTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
-        self.company = Company.objects.create(name='Test Company')
-        self.department = Department.objects.create(name='Test Department', company=self.company)
+        self.company = Company.objects.create(name="Test Company")
+        self.department = Department.objects.create(
+            name="Test Department", company=self.company
+        )
 
         self.workflow = WorkFlow.objects.create(
             company=self.company,
-            name_en='Test Workflow',
-            name_ar='سير عمل تجريبي',
+            name_en="Test Workflow",
+            name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
-            created_by=self.user
+            created_by=self.user,
         )
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
             company=self.company,
-            name_en='Test Pipeline',
-            name_ar='خط أنابيب تجريبي',
+            name_en="Test Pipeline",
+            name_ar="خط أنابيب تجريبي",
             department=self.department,
-            created_by=self.user
+            created_by=self.user,
         )
 
         self.stage = Stage.objects.create(
             pipeline=self.pipeline,
             company=self.company,
-            name_en='Test Stage',
-            name_ar='مرحلة تجريبية',
+            name_en="Test Stage",
+            name_ar="مرحلة تجريبية",
             created_by=self.user,
             order=0,
-            is_active=True
+            is_active=True,
         )
 
     def test_workflow_attachment_creation(self):
@@ -291,12 +302,12 @@ class WorkflowAttachmentModelTest(TestCase):
             object_id=str(self.user.pk),
             status=WorkflowAttachmentStatus.NOT_STARTED,
             started_by=self.user,
-            metadata={'test': 'data'}
+            metadata={"test": "data"},
         )
 
         self.assertEqual(attachment.target, self.user)
         self.assertEqual(attachment.status, WorkflowAttachmentStatus.NOT_STARTED)
-        self.assertEqual(attachment.metadata['test'], 'data')
+        self.assertEqual(attachment.metadata["test"], "data")
 
     def test_workflow_attachment_progress(self):
         """Test workflow attachment progress calculation."""
@@ -304,11 +315,11 @@ class WorkflowAttachmentModelTest(TestCase):
         Stage.objects.create(
             pipeline=self.pipeline,
             company=self.company,
-            name_en='Stage 2',
-            name_ar='المرحلة 2',
+            name_en="Stage 2",
+            name_ar="المرحلة 2",
             created_by=self.user,
             order=1,
-            is_active=True
+            is_active=True,
         )
 
         content_type = ContentType.objects.get_for_model(User)
@@ -320,7 +331,7 @@ class WorkflowAttachmentModelTest(TestCase):
             current_stage=self.stage,
             current_pipeline=self.pipeline,
             status=WorkflowAttachmentStatus.IN_PROGRESS,
-            started_by=self.user
+            started_by=self.user,
         )
 
         # Should be 50% (1 of 2 stages)
@@ -331,10 +342,10 @@ class WorkflowAttachmentModelTest(TestCase):
         stage2 = Stage.objects.create(
             pipeline=self.pipeline,
             company=self.company,
-            name_en='Stage 2',
-            name_ar='المرحلة 2',
+            name_en="Stage 2",
+            name_ar="المرحلة 2",
             created_by=self.user,
-            order=1
+            order=1,
         )
 
         content_type = ContentType.objects.get_for_model(User)
@@ -346,7 +357,7 @@ class WorkflowAttachmentModelTest(TestCase):
             current_stage=self.stage,
             current_pipeline=self.pipeline,
             status=WorkflowAttachmentStatus.IN_PROGRESS,
-            started_by=self.user
+            started_by=self.user,
         )
 
         self.assertEqual(attachment.next_stage, stage2)
@@ -357,9 +368,7 @@ class WorkflowConfigurationModelTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
 
     def test_workflow_configuration_creation(self):
@@ -370,14 +379,14 @@ class WorkflowConfigurationModelTest(TestCase):
             content_type=content_type,
             is_enabled=True,
             auto_start_workflow=True,
-            status_field='workflow_status',
-            stage_field='current_stage'
+            status_field="workflow_status",
+            stage_field="current_stage",
         )
 
         self.assertEqual(config.content_type, content_type)
         self.assertTrue(config.is_enabled)
         self.assertTrue(config.auto_start_workflow)
-        self.assertEqual(config.status_field, 'workflow_status')
+        self.assertEqual(config.status_field, "workflow_status")
 
 
 @pytest.mark.django_db
@@ -387,17 +396,14 @@ class TestApprovalWorkflowIntegration:
     def test_approval_flow_creation(self):
         """Test that approval flows can be created for workflow attachments."""
         user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
 
         # Create approval flow for the user object
         content_type = ContentType.objects.get_for_model(User)
 
         approval_flow = ApprovalFlow.objects.create(
-            content_type=content_type,
-            object_id=str(user.pk)
+            content_type=content_type, object_id=str(user.pk)
         )
 
         assert approval_flow.target == user

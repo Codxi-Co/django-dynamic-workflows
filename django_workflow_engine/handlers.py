@@ -1,7 +1,7 @@
 """Custom hook handler for approval steps and workflow events."""
 
 import logging
-from typing import TYPE_CHECKING, Optional, Dict, Any, List
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 if TYPE_CHECKING:
     from .models import ApprovalInstance
@@ -117,7 +117,9 @@ class BaseApprovalHandler:
         )
 
 
-def get_handler_for_instance(instance: "ApprovalInstance") -> Optional[BaseApprovalHandler]:
+def get_handler_for_instance(
+    instance: "ApprovalInstance",
+) -> Optional[BaseApprovalHandler]:
     """Get the appropriate handler for an approval instance.
 
     This function allows for dynamic handler resolution based on the
@@ -136,6 +138,7 @@ def get_handler_for_instance(instance: "ApprovalInstance") -> Optional[BaseAppro
 
     # Check if this object has a WorkflowAttachment (generic workflow support)
     from .services import get_workflow_attachment
+
     attachment = get_workflow_attachment(target_object)
 
     if attachment:
@@ -146,12 +149,17 @@ def get_handler_for_instance(instance: "ApprovalInstance") -> Optional[BaseAppro
     handler_name = f"{target_object._meta.app_label}.{target_object._meta.model_name}"
 
     # Legacy support for specific handlers
-    if hasattr(target_object, '_meta') and target_object._meta.model_name == 'opportunity':
+    if (
+        hasattr(target_object, "_meta")
+        and target_object._meta.model_name == "opportunity"
+    ):
         # Return opportunity-specific handler if available
         try:
             from django.apps import apps
-            if apps.is_installed('crm'):
+
+            if apps.is_installed("crm"):
                 from crm.approval import OpportunityApprovalHandler
+
                 return OpportunityApprovalHandler(target_object)
         except ImportError:
             logger.debug(f"No specific handler found for {handler_name}")
@@ -180,6 +188,7 @@ class ApprovalStepBuilder:
             List of approval step configurations
         """
         from .utils import build_approval_steps
+
         return build_approval_steps(self.stage, self.created_by_user)
 
 
@@ -201,8 +210,8 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
             logger.info(f"Final approval completed for {self.instance}")
 
             # Trigger approve actions before moving to next stage
-            from .services import get_workflow_attachment, trigger_workflow_event
             from .choices import ActionType
+            from .services import get_workflow_attachment, trigger_workflow_event
 
             attachment = get_workflow_attachment(self.instance)
             if attachment:
@@ -210,7 +219,7 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
                     attachment,
                     ActionType.AFTER_APPROVE,
                     approval_instance=approval_instance,
-                    user=getattr(approval_instance, 'action_user', None)
+                    user=getattr(approval_instance, "action_user", None),
                 )
 
             # Move to next workflow stage
@@ -238,8 +247,8 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
             logger.info(f"Approval rejected for {self.instance}")
 
             # Trigger reject actions first
-            from .services import get_workflow_attachment, trigger_workflow_event
             from .choices import ActionType
+            from .services import get_workflow_attachment, trigger_workflow_event
 
             attachment = get_workflow_attachment(self.instance)
             if attachment:
@@ -247,17 +256,18 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
                     attachment,
                     ActionType.AFTER_REJECT,
                     approval_instance=approval_instance,
-                    reason=getattr(approval_instance, 'comment', ''),
-                    user=getattr(approval_instance, 'action_user', None)
+                    reason=getattr(approval_instance, "comment", ""),
+                    user=getattr(approval_instance, "action_user", None),
                 )
 
             # Update workflow attachment status
             if attachment:
                 from .services import reject_workflow_stage
+
                 reject_workflow_stage(
                     obj=self.instance,
                     stage=attachment.current_stage,
-                    reason=getattr(approval_instance, 'comment', '')
+                    reason=getattr(approval_instance, "comment", ""),
                 )
 
         except Exception as e:
@@ -269,20 +279,21 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
             logger.info(f"Resubmission requested for {self.instance}")
 
             # Trigger resubmission actions
-            from .services import get_workflow_attachment, trigger_workflow_event
             from .choices import ActionType
+            from .services import get_workflow_attachment, trigger_workflow_event
 
             attachment = get_workflow_attachment(self.instance)
 
             if attachment:
                 # Look for resubmission_stage_id in approval instance extra_fields
-                extra_fields = getattr(approval_instance, 'extra_fields', {})
-                resubmission_stage_id = extra_fields.get('resubmission_stage_id')
+                extra_fields = getattr(approval_instance, "extra_fields", {})
+                resubmission_stage_id = extra_fields.get("resubmission_stage_id")
                 target_stage = None
 
                 if resubmission_stage_id:
                     try:
                         from .models import Stage
+
                         target_stage = Stage.objects.get(pk=resubmission_stage_id)
 
                         # Update attachment to point to resubmission stage
@@ -290,7 +301,9 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
                         attachment.current_pipeline = target_stage.pipeline
                         attachment.save()
                     except Stage.DoesNotExist:
-                        logger.error(f"Resubmission stage {resubmission_stage_id} not found")
+                        logger.error(
+                            f"Resubmission stage {resubmission_stage_id} not found"
+                        )
 
                 # Trigger resubmission actions
                 trigger_workflow_event(
@@ -298,8 +311,8 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
                     ActionType.AFTER_RESUBMISSION,
                     approval_instance=approval_instance,
                     target_stage=target_stage,
-                    reason=getattr(approval_instance, 'comment', ''),
-                    user=getattr(approval_instance, 'action_user', None)
+                    reason=getattr(approval_instance, "comment", ""),
+                    user=getattr(approval_instance, "action_user", None),
                 )
 
             logger.info(
@@ -347,7 +360,7 @@ class WorkflowProgressManager:
             workflow=workflow,
             user=user,
             auto_start=True,
-            metadata=metadata or {}
+            metadata=metadata or {},
         )
 
         logger.info(
@@ -366,11 +379,17 @@ class WorkflowProgressManager:
             return None
 
         return {
-            'workflow': attachment.workflow.name_en,
-            'status': attachment.status,
-            'current_stage': attachment.current_stage.name_en if attachment.current_stage else None,
-            'current_pipeline': attachment.current_pipeline.name_en if attachment.current_pipeline else None,
-            'progress_percentage': attachment.progress_percentage,
-            'started_at': attachment.started_at,
-            'completed_at': attachment.completed_at,
+            "workflow": attachment.workflow.name_en,
+            "status": attachment.status,
+            "current_stage": (
+                attachment.current_stage.name_en if attachment.current_stage else None
+            ),
+            "current_pipeline": (
+                attachment.current_pipeline.name_en
+                if attachment.current_pipeline
+                else None
+            ),
+            "progress_percentage": attachment.progress_percentage,
+            "started_at": attachment.started_at,
+            "completed_at": attachment.completed_at,
         }

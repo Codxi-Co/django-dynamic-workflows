@@ -1,20 +1,26 @@
 """Test cases for workflow handlers."""
 
-import pytest
+from unittest.mock import Mock, patch
+
 from django.contrib.auth import get_user_model
 from django.contrib.contenttypes.models import ContentType
 from django.test import TestCase
-from unittest.mock import patch, Mock
 
-from approval_workflow.models import ApprovalFlow, ApprovalInstance
+import pytest
 from approval_workflow.choices import ApprovalStatus
-from django_workflow_engine.choices import WorkflowStatus, ActionType, WorkflowAttachmentStatus
-from django_workflow_engine.models import WorkFlow, Pipeline, Stage, WorkflowAttachment
+from approval_workflow.models import ApprovalFlow, ApprovalInstance
+
+from django_workflow_engine.choices import (
+    ActionType,
+    WorkflowAttachmentStatus,
+    WorkflowStatus,
+)
 from django_workflow_engine.handlers import (
     BaseApprovalHandler,
     WorkflowApprovalHandler,
-    get_handler_for_instance
+    get_handler_for_instance,
 )
+from django_workflow_engine.models import Pipeline, Stage, WorkFlow, WorkflowAttachment
 from django_workflow_engine.services import attach_workflow_to_object
 from sandbox.testapp.models import Company, Department
 
@@ -48,57 +54,54 @@ class WorkflowApprovalHandlerTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
-        self.company = Company.objects.create(name='Test Company')
-        self.department = Department.objects.create(name='Test Department', company=self.company)
+        self.company = Company.objects.create(name="Test Company")
+        self.department = Department.objects.create(
+            name="Test Department", company=self.company
+        )
 
         # Create workflow structure
         self.workflow = WorkFlow.objects.create(
             company=self.company,
-            name_en='Test Workflow',
-            name_ar='سير عمل تجريبي',
+            name_en="Test Workflow",
+            name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
-            created_by=self.user
+            created_by=self.user,
         )
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
             company=self.company,
-            name_en='Test Pipeline',
-            name_ar='خط أنابيب تجريبي',
+            name_en="Test Pipeline",
+            name_ar="خط أنابيب تجريبي",
             department_id=self.department.id,
-            created_by=self.user
+            created_by=self.user,
         )
 
         self.stage1 = Stage.objects.create(
             pipeline=self.pipeline,
             company=self.company,
-            name_en='Stage 1',
-            name_ar='المرحلة 1',
+            name_en="Stage 1",
+            name_ar="المرحلة 1",
             created_by=self.user,
             order=0,
-            is_active=True
+            is_active=True,
         )
 
         self.stage2 = Stage.objects.create(
             pipeline=self.pipeline,
             company=self.company,
-            name_en='Stage 2',
-            name_ar='المرحلة 2',
+            name_en="Stage 2",
+            name_ar="المرحلة 2",
             created_by=self.user,
             order=1,
-            is_active=True
+            is_active=True,
         )
 
         # Create workflow attachment
         self.attachment = attach_workflow_to_object(
-            obj=self.user,
-            workflow=self.workflow,
-            user=self.user,
-            auto_start=False
+            obj=self.user, workflow=self.workflow, user=self.user, auto_start=False
         )
         self.attachment.current_stage = self.stage1
         self.attachment.current_pipeline = self.pipeline
@@ -111,8 +114,7 @@ class WorkflowApprovalHandlerTest(TestCase):
         # Create approval flow and instance
         content_type = ContentType.objects.get_for_model(User)
         self.approval_flow = ApprovalFlow.objects.create(
-            content_type=content_type,
-            object_id=str(self.user.pk)
+            content_type=content_type, object_id=str(self.user.pk)
         )
 
         self.approval_instance = ApprovalInstance.objects.create(
@@ -121,11 +123,11 @@ class WorkflowApprovalHandlerTest(TestCase):
             status=ApprovalStatus.APPROVED,
             assigned_to=self.user,
             action_user=self.user,
-            comment="Test approval"
+            comment="Test approval",
         )
 
-    @patch('django_workflow_engine.services.trigger_workflow_event')
-    @patch('django_workflow_engine.services.move_to_next_stage')
+    @patch("django_workflow_engine.services.trigger_workflow_event")
+    @patch("django_workflow_engine.services.move_to_next_stage")
     def test_on_final_approve(self, mock_move_stage, mock_trigger_event):
         """Test final approval handler."""
         mock_move_stage.return_value = self.attachment
@@ -138,7 +140,7 @@ class WorkflowApprovalHandlerTest(TestCase):
             self.attachment,
             ActionType.AFTER_APPROVE,
             approval_instance=self.approval_instance,
-            user=self.user
+            user=self.user,
         )
 
         # Should move to next stage
@@ -151,8 +153,8 @@ class WorkflowApprovalHandlerTest(TestCase):
         # Should not raise any errors
         handler.after_approve(self.approval_instance)
 
-    @patch('django_workflow_engine.services.trigger_workflow_event')
-    @patch('django_workflow_engine.services.reject_workflow_stage')
+    @patch("django_workflow_engine.services.trigger_workflow_event")
+    @patch("django_workflow_engine.services.reject_workflow_stage")
     def test_after_reject(self, mock_reject_stage, mock_trigger_event):
         """Test rejection handler."""
         self.approval_instance.comment = "Rejected for testing"
@@ -166,21 +168,19 @@ class WorkflowApprovalHandlerTest(TestCase):
             ActionType.AFTER_REJECT,
             approval_instance=self.approval_instance,
             reason="Rejected for testing",
-            user=self.user
+            user=self.user,
         )
 
         # Should reject workflow stage
         mock_reject_stage.assert_called_once_with(
-            obj=self.user,
-            stage=self.stage1,
-            reason="Rejected for testing"
+            obj=self.user, stage=self.stage1, reason="Rejected for testing"
         )
 
-    @patch('django_workflow_engine.services.trigger_workflow_event')
+    @patch("django_workflow_engine.services.trigger_workflow_event")
     def test_after_resubmission(self, mock_trigger_event):
         """Test resubmission handler."""
         # Set up resubmission to stage 2
-        self.approval_instance.extra_fields = {'resubmission_stage_id': self.stage2.id}
+        self.approval_instance.extra_fields = {"resubmission_stage_id": self.stage2.id}
         self.approval_instance.comment = "Please resubmit"
 
         handler = WorkflowApprovalHandler(self.user)
@@ -199,12 +199,12 @@ class WorkflowApprovalHandlerTest(TestCase):
     def test_after_resubmission_invalid_stage(self):
         """Test resubmission with invalid stage ID."""
         # Set up resubmission to non-existent stage
-        self.approval_instance.extra_fields = {'resubmission_stage_id': 99999}
+        self.approval_instance.extra_fields = {"resubmission_stage_id": 99999}
 
         handler = WorkflowApprovalHandler(self.user)
 
         # Should not raise errors, but log error
-        with patch('django_workflow_engine.handlers.logger') as mock_logger:
+        with patch("django_workflow_engine.handlers.logger") as mock_logger:
             handler.after_resubmission(self.approval_instance)
             # Should log error about stage not found
             mock_logger.error.assert_called()
@@ -215,37 +215,37 @@ class HandlerRegistrationTest(TestCase):
 
     def setUp(self):
         self.user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
-        self.company = Company.objects.create(name='Test Company')
-        self.department = Department.objects.create(name='Test Department', company=self.company)
+        self.company = Company.objects.create(name="Test Company")
+        self.department = Department.objects.create(
+            name="Test Department", company=self.company
+        )
 
         self.workflow = WorkFlow.objects.create(
             company=self.company,
-            name_en='Test Workflow',
-            name_ar='سير عمل تجريبي',
+            name_en="Test Workflow",
+            name_ar="سير عمل تجريبي",
             status=WorkflowStatus.ACTIVE,
-            created_by=self.user
+            created_by=self.user,
         )
 
         self.pipeline = Pipeline.objects.create(
             workflow=self.workflow,
             company=self.company,
-            name_en='Test Pipeline',
-            name_ar='خط أنابيب تجريبي',
+            name_en="Test Pipeline",
+            name_ar="خط أنابيب تجريبي",
             department_id=self.department.id,
-            created_by=self.user
+            created_by=self.user,
         )
 
         self.stage = Stage.objects.create(
             pipeline=self.pipeline,
             company=self.company,
-            name_en='Test Stage',
-            name_ar='مرحلة تجريبية',
+            name_en="Test Stage",
+            name_ar="مرحلة تجريبية",
             is_active=True,
-            created_by=self.user
+            created_by=self.user,
         )
 
         # Update workflow active status
@@ -255,24 +255,20 @@ class HandlerRegistrationTest(TestCase):
         """Test getting handler for instance with workflow attachment."""
         # Create workflow attachment
         attachment = attach_workflow_to_object(
-            obj=self.user,
-            workflow=self.workflow,
-            user=self.user,
-            auto_start=False
+            obj=self.user, workflow=self.workflow, user=self.user, auto_start=False
         )
 
         # Create approval flow
         content_type = ContentType.objects.get_for_model(User)
         approval_flow = ApprovalFlow.objects.create(
-            content_type=content_type,
-            object_id=str(self.user.pk)
+            content_type=content_type, object_id=str(self.user.pk)
         )
 
         approval_instance = ApprovalInstance.objects.create(
             flow=approval_flow,
             step_number=1,
             status=ApprovalStatus.PENDING,
-            assigned_to=self.user
+            assigned_to=self.user,
         )
 
         # Should return WorkflowApprovalHandler
@@ -285,15 +281,14 @@ class HandlerRegistrationTest(TestCase):
         # Create approval flow without workflow attachment
         content_type = ContentType.objects.get_for_model(User)
         approval_flow = ApprovalFlow.objects.create(
-            content_type=content_type,
-            object_id=str(self.user.pk)
+            content_type=content_type, object_id=str(self.user.pk)
         )
 
         approval_instance = ApprovalInstance.objects.create(
             flow=approval_flow,
             step_number=1,
             status=ApprovalStatus.PENDING,
-            assigned_to=self.user
+            assigned_to=self.user,
         )
 
         # Should return None for objects without workflow attachment
@@ -305,14 +300,14 @@ class HandlerRegistrationTest(TestCase):
         # Create approval flow without target
         approval_flow = ApprovalFlow.objects.create(
             content_type=ContentType.objects.get_for_model(User),
-            object_id='999999'  # Non-existent object
+            object_id="999999",  # Non-existent object
         )
 
         approval_instance = ApprovalInstance.objects.create(
             flow=approval_flow,
             step_number=1,
             status=ApprovalStatus.PENDING,
-            assigned_to=self.user
+            assigned_to=self.user,
         )
 
         # Should return None for instances with no target
@@ -328,57 +323,52 @@ class TestHandlerIntegrationWithApprovalWorkflow:
         """Test complete integration from approval to workflow progression."""
         # Create user and workflow
         user = User.objects.create_user(
-            username='testuser',
-            email='test@example.com',
-            password='testpass123'
+            username="testuser", email="test@example.com", password="testpass123"
         )
 
-        company = Company.objects.create(name='Test Company')
-        department = Department.objects.create(name='Test Department', company=company)
+        company = Company.objects.create(name="Test Company")
+        department = Department.objects.create(name="Test Department", company=company)
 
         workflow = WorkFlow.objects.create(
             company=company,
-            name_en='Integration Test Workflow',
-            name_ar='سير عمل اختبار التكامل',
+            name_en="Integration Test Workflow",
+            name_ar="سير عمل اختبار التكامل",
             status=WorkflowStatus.ACTIVE,
-            created_by=user
+            created_by=user,
         )
 
         pipeline = Pipeline.objects.create(
             workflow=workflow,
             company=company,
-            name_en='Test Pipeline',
-            name_ar='خط أنابيب تجريبي',
+            name_en="Test Pipeline",
+            name_ar="خط أنابيب تجريبي",
             department_id=department.id,
-            created_by=user
+            created_by=user,
         )
 
         stage1 = Stage.objects.create(
             pipeline=pipeline,
             company=company,
-            name_en='Initial Review',
-            name_ar='المراجعة الأولية',
+            name_en="Initial Review",
+            name_ar="المراجعة الأولية",
             created_by=user,
             order=0,
-            is_active=True
+            is_active=True,
         )
 
         stage2 = Stage.objects.create(
             pipeline=pipeline,
             company=company,
-            name_en='Final Approval',
-            name_ar='الموافقة النهائية',
+            name_en="Final Approval",
+            name_ar="الموافقة النهائية",
             created_by=user,
             order=1,
-            is_active=True
+            is_active=True,
         )
 
         # Attach workflow
         attachment = attach_workflow_to_object(
-            obj=user,
-            workflow=workflow,
-            user=user,
-            auto_start=False
+            obj=user, workflow=workflow, user=user, auto_start=False
         )
         attachment.current_stage = stage1
         attachment.current_pipeline = pipeline
@@ -391,8 +381,7 @@ class TestHandlerIntegrationWithApprovalWorkflow:
         # Create approval flow
         content_type = ContentType.objects.get_for_model(User)
         approval_flow = ApprovalFlow.objects.create(
-            content_type=content_type,
-            object_id=str(user.pk)
+            content_type=content_type, object_id=str(user.pk)
         )
 
         # Create approval instance for stage 1
@@ -402,7 +391,7 @@ class TestHandlerIntegrationWithApprovalWorkflow:
             status=ApprovalStatus.APPROVED,
             assigned_to=user,
             action_user=user,
-            comment="Stage 1 approved"
+            comment="Stage 1 approved",
         )
 
         # Test handler resolution
@@ -411,7 +400,7 @@ class TestHandlerIntegrationWithApprovalWorkflow:
         assert handler.instance == user
 
         # Test final approval progression
-        with patch('django_workflow_engine.services.move_to_next_stage') as mock_move:
+        with patch("django_workflow_engine.services.move_to_next_stage") as mock_move:
             mock_move.return_value = attachment
             handler.on_final_approve(approval_instance)
             mock_move.assert_called_once_with(user)

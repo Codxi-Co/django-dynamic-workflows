@@ -21,10 +21,10 @@ def default_send_email_after_approve(**context) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        attachment = context.get('attachment')
-        obj = context.get('obj')
-        current_stage = context.get('current_stage')
-        approver = context.get('user')
+        attachment = context.get("attachment")
+        obj = context.get("obj")
+        current_stage = context.get("current_stage")
+        approver = context.get("user")
 
         if not all([attachment, obj, current_stage]):
             logger.warning("Missing required context for after_approve email")
@@ -34,11 +34,15 @@ def default_send_email_after_approve(**context) -> bool:
         recipients = []
 
         # Add creator email
-        if hasattr(obj, 'created_by') and obj.created_by and hasattr(obj.created_by, 'email'):
+        if (
+            hasattr(obj, "created_by")
+            and obj.created_by
+            and hasattr(obj.created_by, "email")
+        ):
             recipients.append(obj.created_by.email)
 
         # Add workflow starter email
-        if attachment.started_by and hasattr(attachment.started_by, 'email'):
+        if attachment.started_by and hasattr(attachment.started_by, "email"):
             recipients.append(attachment.started_by.email)
 
         # Remove duplicates
@@ -78,11 +82,11 @@ def default_send_email_after_reject(**context) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        attachment = context.get('attachment')
-        obj = context.get('obj')
-        current_stage = context.get('current_stage')
-        reason = context.get('reason', 'No reason provided')
-        rejector = context.get('user')
+        attachment = context.get("attachment")
+        obj = context.get("obj")
+        current_stage = context.get("current_stage")
+        reason = context.get("reason", "No reason provided")
+        rejector = context.get("user")
 
         if not all([attachment, obj, current_stage]):
             logger.warning("Missing required context for after_reject email")
@@ -92,11 +96,15 @@ def default_send_email_after_reject(**context) -> bool:
         recipients = []
 
         # Add creator email
-        if hasattr(obj, 'created_by') and obj.created_by and hasattr(obj.created_by, 'email'):
+        if (
+            hasattr(obj, "created_by")
+            and obj.created_by
+            and hasattr(obj.created_by, "email")
+        ):
             recipients.append(obj.created_by.email)
 
         # Add workflow starter email
-        if attachment.started_by and hasattr(attachment.started_by, 'email'):
+        if attachment.started_by and hasattr(attachment.started_by, "email"):
             recipients.append(attachment.started_by.email)
 
         recipients = list(set(filter(None, recipients)))
@@ -135,11 +143,11 @@ def default_send_email_after_resubmission(**context) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        attachment = context.get('attachment')
-        obj = context.get('obj')
-        target_stage = context.get('target_stage')
-        reason = context.get('reason', 'No reason provided')
-        requester = context.get('user')
+        attachment = context.get("attachment")
+        obj = context.get("obj")
+        target_stage = context.get("target_stage")
+        reason = context.get("reason", "No reason provided")
+        requester = context.get("user")
 
         if not all([attachment, obj]):
             logger.warning("Missing required context for after_resubmission email")
@@ -148,10 +156,14 @@ def default_send_email_after_resubmission(**context) -> bool:
         # Get email recipients
         recipients = []
 
-        if hasattr(obj, 'created_by') and obj.created_by and hasattr(obj.created_by, 'email'):
+        if (
+            hasattr(obj, "created_by")
+            and obj.created_by
+            and hasattr(obj.created_by, "email")
+        ):
             recipients.append(obj.created_by.email)
 
-        if attachment.started_by and hasattr(attachment.started_by, 'email'):
+        if attachment.started_by and hasattr(attachment.started_by, "email"):
             recipients.append(attachment.started_by.email)
 
         recipients = list(set(filter(None, recipients)))
@@ -190,19 +202,19 @@ def default_send_email_after_delegate(**context) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        attachment = context.get('attachment')
-        obj = context.get('obj')
-        current_stage = context.get('current_stage')
-        delegate_to = context.get('delegate_to')
-        delegator = context.get('user')
-        reason = context.get('reason', 'No reason provided')
+        attachment = context.get("attachment")
+        obj = context.get("obj")
+        current_stage = context.get("current_stage")
+        delegate_to = context.get("delegate_to")
+        delegator = context.get("user")
+        reason = context.get("reason", "No reason provided")
 
         if not all([attachment, obj, current_stage, delegate_to]):
             logger.warning("Missing required context for after_delegate email")
             return False
 
         # Send email to delegate
-        if hasattr(delegate_to, 'email') and delegate_to.email:
+        if hasattr(delegate_to, "email") and delegate_to.email:
             subject = f"Approval Delegated - {current_stage.name_en}"
             message = f"""
             An approval has been delegated to you.
@@ -234,10 +246,10 @@ def default_send_email_after_move_stage(**context) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        attachment = context.get('attachment')
-        obj = context.get('obj')
-        from_stage = context.get('from_stage')
-        to_stage = context.get('to_stage')
+        attachment = context.get("attachment")
+        obj = context.get("obj")
+        from_stage = context.get("from_stage")
+        to_stage = context.get("to_stage")
 
         if not all([attachment, obj, to_stage]):
             logger.warning("Missing required context for after_move_stage email")
@@ -246,10 +258,14 @@ def default_send_email_after_move_stage(**context) -> bool:
         # Get email recipients
         recipients = []
 
-        if hasattr(obj, 'created_by') and obj.created_by and hasattr(obj.created_by, 'email'):
+        if (
+            hasattr(obj, "created_by")
+            and obj.created_by
+            and hasattr(obj.created_by, "email")
+        ):
             recipients.append(obj.created_by.email)
 
-        if attachment.started_by and hasattr(attachment.started_by, 'email'):
+        if attachment.started_by and hasattr(attachment.started_by, "email"):
             recipients.append(attachment.started_by.email)
 
         recipients = list(set(filter(None, recipients)))
@@ -287,10 +303,10 @@ def default_send_email_after_move_pipeline(**context) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        attachment = context.get('attachment')
-        obj = context.get('obj')
-        from_pipeline = context.get('from_pipeline')
-        to_pipeline = context.get('to_pipeline')
+        attachment = context.get("attachment")
+        obj = context.get("obj")
+        from_pipeline = context.get("from_pipeline")
+        to_pipeline = context.get("to_pipeline")
 
         if not all([attachment, obj, to_pipeline]):
             logger.warning("Missing required context for after_move_pipeline email")
@@ -299,10 +315,14 @@ def default_send_email_after_move_pipeline(**context) -> bool:
         # Get email recipients
         recipients = []
 
-        if hasattr(obj, 'created_by') and obj.created_by and hasattr(obj.created_by, 'email'):
+        if (
+            hasattr(obj, "created_by")
+            and obj.created_by
+            and hasattr(obj.created_by, "email")
+        ):
             recipients.append(obj.created_by.email)
 
-        if attachment.started_by and hasattr(attachment.started_by, 'email'):
+        if attachment.started_by and hasattr(attachment.started_by, "email"):
             recipients.append(attachment.started_by.email)
 
         recipients = list(set(filter(None, recipients)))
@@ -340,10 +360,10 @@ def default_send_email_on_workflow_start(**context) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        attachment = context.get('attachment')
-        obj = context.get('obj')
-        workflow = context.get('workflow')
-        initial_stage = context.get('initial_stage')
+        attachment = context.get("attachment")
+        obj = context.get("obj")
+        workflow = context.get("workflow")
+        initial_stage = context.get("initial_stage")
 
         if not all([attachment, obj, workflow]):
             logger.warning("Missing required context for on_workflow_start email")
@@ -352,10 +372,14 @@ def default_send_email_on_workflow_start(**context) -> bool:
         # Get email recipients
         recipients = []
 
-        if hasattr(obj, 'created_by') and obj.created_by and hasattr(obj.created_by, 'email'):
+        if (
+            hasattr(obj, "created_by")
+            and obj.created_by
+            and hasattr(obj.created_by, "email")
+        ):
             recipients.append(obj.created_by.email)
 
-        if attachment.started_by and hasattr(attachment.started_by, 'email'):
+        if attachment.started_by and hasattr(attachment.started_by, "email"):
             recipients.append(attachment.started_by.email)
 
         recipients = list(set(filter(None, recipients)))
@@ -393,9 +417,9 @@ def default_send_email_on_workflow_complete(**context) -> bool:
         True if email sent successfully, False otherwise
     """
     try:
-        attachment = context.get('attachment')
-        obj = context.get('obj')
-        workflow = context.get('workflow')
+        attachment = context.get("attachment")
+        obj = context.get("obj")
+        workflow = context.get("workflow")
 
         if not all([attachment, obj, workflow]):
             logger.warning("Missing required context for on_workflow_complete email")
@@ -404,10 +428,14 @@ def default_send_email_on_workflow_complete(**context) -> bool:
         # Get email recipients
         recipients = []
 
-        if hasattr(obj, 'created_by') and obj.created_by and hasattr(obj.created_by, 'email'):
+        if (
+            hasattr(obj, "created_by")
+            and obj.created_by
+            and hasattr(obj.created_by, "email")
+        ):
             recipients.append(obj.created_by.email)
 
-        if attachment.started_by and hasattr(attachment.started_by, 'email'):
+        if attachment.started_by and hasattr(attachment.started_by, "email"):
             recipients.append(attachment.started_by.email)
 
         recipients = list(set(filter(None, recipients)))
@@ -435,7 +463,9 @@ def default_send_email_on_workflow_complete(**context) -> bool:
         return False
 
 
-def _send_email(recipients: list, subject: str, message: str, context: Dict[str, Any]) -> bool:
+def _send_email(
+    recipients: list, subject: str, message: str, context: Dict[str, Any]
+) -> bool:
     """Send email using Django's email backend.
 
     Args:
@@ -448,11 +478,11 @@ def _send_email(recipients: list, subject: str, message: str, context: Dict[str,
         True if email sent successfully, False otherwise
     """
     try:
-        from django.core.mail import send_mail
         from django.conf import settings
+        from django.core.mail import send_mail
 
         # Get sender email from settings
-        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
+        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@example.com")
 
         # Send email
         send_mail(
@@ -460,7 +490,7 @@ def _send_email(recipients: list, subject: str, message: str, context: Dict[str,
             message=message,
             from_email=from_email,
             recipient_list=recipients,
-            fail_silently=False
+            fail_silently=False,
         )
 
         logger.info(f"Email sent successfully to {recipients}")

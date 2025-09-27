@@ -13,9 +13,9 @@ Usage:
 """
 
 import os
-import sys
-import subprocess
 import shutil
+import subprocess
+import sys
 from pathlib import Path
 
 
@@ -43,10 +43,10 @@ def clean_build():
     print("🧹 Cleaning build artifacts...")
 
     directories_to_clean = [
-        'build',
-        'dist',
-        'django_workflow_engine.egg-info',
-        '*.egg-info',
+        "build",
+        "dist",
+        "django_workflow_engine.egg-info",
+        "*.egg-info",
     ]
 
     for directory in directories_to_clean:
@@ -59,9 +59,9 @@ def clean_build():
                 print(f"   Removed file: {directory}")
 
     # Clean __pycache__ directories
-    for root, dirs, files in os.walk('.'):
-        if '__pycache__' in dirs:
-            pycache_path = os.path.join(root, '__pycache__')
+    for root, dirs, files in os.walk("."):
+        if "__pycache__" in dirs:
+            pycache_path = os.path.join(root, "__pycache__")
             shutil.rmtree(pycache_path)
             print(f"   Removed __pycache__: {pycache_path}")
 
@@ -85,10 +85,10 @@ def compile_translations():
                 if po_file.exists():
                     print(f"   Compiling {lang_dir.name} translations...")
                     run_command(
-                        f"python -c \"import django; django.setup(); "
+                        f'python -c "import django; django.setup(); '
                         f"from django.core.management import call_command; "
                         f"call_command('compilemessages', locale=['{lang_dir.name}'])\"",
-                        f"Compiling {lang_dir.name}"
+                        f"Compiling {lang_dir.name}",
                     )
 
 
@@ -126,7 +126,9 @@ def main():
 
     # Ensure we're in the right directory
     if not os.path.exists("pyproject.toml"):
-        print("❌ Error: pyproject.toml not found. Run this script from the project root.")
+        print(
+            "❌ Error: pyproject.toml not found. Run this script from the project root."
+        )
         sys.exit(1)
 
     try:
@@ -148,9 +150,13 @@ def main():
         print("\n🎉 Package build completed successfully!")
         print("\n📋 Next steps:")
         print("   1. Review the built files in the 'dist' directory")
-        print("   2. Test upload to Test PyPI: twine upload --repository testpypi dist/*")
+        print(
+            "   2. Test upload to Test PyPI: twine upload --repository testpypi dist/*"
+        )
         print("   3. Upload to PyPI: twine upload dist/*")
-        print("\n💡 Note: Make sure you have configured your PyPI credentials with 'twine configure'")
+        print(
+            "\n💡 Note: Make sure you have configured your PyPI credentials with 'twine configure'"
+        )
 
     except KeyboardInterrupt:
         print("\n❌ Build interrupted by user")
