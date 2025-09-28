@@ -322,6 +322,38 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
         except Exception as e:
             logger.error(f"Error handling workflow resubmission: {str(e)}")
 
+    def after_delegate(self, approval_instance):
+        """Called when delegation occurs."""
+        try:
+            logger.info(f"Delegation occurred for {self.instance}")
+
+            # Trigger delegation actions
+            from .choices import ActionType
+            from .services import get_workflow_attachment, trigger_workflow_event
+
+            attachment = get_workflow_attachment(self.instance)
+
+            if attachment:
+                # Get delegate user from approval instance
+                delegate_user = getattr(approval_instance, "assigned_to", None)
+
+                # Trigger delegation actions
+                trigger_workflow_event(
+                    attachment,
+                    ActionType.AFTER_DELEGATE,
+                    approval_instance=approval_instance,
+                    delegate_user=delegate_user,
+                    reason=getattr(approval_instance, "comment", ""),
+                    user=getattr(approval_instance, "action_user", None),
+                )
+
+            logger.info(
+                f"Workflow delegation completed - delegated to: {delegate_user}"
+            )
+
+        except Exception as e:
+            logger.error(f"Error handling workflow delegation: {str(e)}")
+
 
 def get_workflow_handler_for_object(obj):
     """Get the workflow handler for an object.

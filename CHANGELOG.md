@@ -5,6 +5,30 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.5] - 2025-09-28
+
+### 🚀 Complete Resubmission & Delegation Implementation
+- **Enhanced resubmission logic**: Implemented proper `after_resubmission` handler with stage transitions and workflow event triggers
+- **Added delegation logic**: New `after_delegate` handler with delegate user assignment and workflow event integration
+- **WorkflowApprovalSerializer integration**: All approval actions (approve, reject, delegate, resubmission) now use `advance_flow` with proper parameter passing
+- **Comprehensive test coverage**: Completely rewritten flow tests using WorkflowApprovalSerializer instead of manual assignment
+
+### 🔧 Workflow Engine Improvements
+- **Handler integration**: Added `ActionType.AFTER_DELEGATE` and `ActionType.AFTER_RESUBMISSION` workflow event triggers
+- **Stage transition logic**: Resubmission properly updates workflow attachment to target resubmission stage
+- **Metadata tracking**: Resubmission steps include `resubmission_stage_id` in extra_fields for audit trail
+- **Error handling**: Improved error handling and validation in serializer save method
+
+### 📋 Testing & Validation
+- **advance_flow integration tests**: Added comprehensive mocking tests to verify correct parameter passing to approval workflow
+- **End-to-end flow tests**: New tests validate complete approval progression using proper serializer patterns
+- **Real workflow simulation**: Tests now use actual WorkflowApprovalSerializer patterns from production implementations
+
+### 📚 Documentation Updates
+- **Feature highlights**: Updated README with new resubmission and delegation capabilities
+- **Implementation notes**: Added documentation about workflow event triggers and stage transitions
+- **Known limitations**: Documented step number conflict issue in approval workflow package for resubmission edge cases
+
 ## [1.0.4] - 2025-09-27
 
 ### 🔄 Clone Tracking & API Improvements

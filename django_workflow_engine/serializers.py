@@ -237,7 +237,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
                 )
 
                 # Update workflow attachment status if needed
-                self._update_workflow_attachment(action)
+                self._update_workflow_attachment(action, user)
 
                 return self.object_instance
 
@@ -313,7 +313,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
         except User.DoesNotExist:
             raise ValueError(f"User with ID {user_id} not found")
 
-    def _update_workflow_attachment(self, action):
+    def _update_workflow_attachment(self, action, user=None):
         """Update workflow attachment status based on action."""
         attachment = get_workflow_attachment(self.object_instance)
         if not attachment:
@@ -324,14 +324,15 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             attachment.save()
 
             # Call workflow hooks
-            from .services import _call_workflow_hook
+            from .choices import ActionType
+            from .services import trigger_workflow_event
 
-            _call_workflow_hook(
+            trigger_workflow_event(
                 attachment,
-                "after_reject_stage",
-                self.object_instance,
-                attachment.current_stage,
-                attachment,
+                ActionType.AFTER_REJECT,
+                target_object=self.object_instance,
+                stage=attachment.current_stage,
+                user=user,
             )
 
         # Note: Approval progression to next stage is handled by the approval workflow

@@ -8,6 +8,8 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 - **Database-Stored Actions**: Configure actions dynamically in the database with inheritance system
 - **Action Inheritance**: Stage → Pipeline → Workflow → Default action hierarchy
 - **Approval Flow Integration**: Built on top of django-approval-workflow package
+- **Complete Approval Actions**: Full support for approve, reject, delegate, and resubmission workflows
+- **Resubmission & Delegation Logic**: Proper stage transitions and user assignments with workflow event triggers
 - **Configurable Triggers**: Actions triggered on workflow events (approve, reject, delegate, etc.)
 - **Default Email Actions**: Smart email notifications to creators and approvers
 - **Dynamic Function Execution**: Execute Python functions by database-stored paths
@@ -577,6 +579,8 @@ def delegate_approval(request, purchase_request_id):
         serializer.save()
         # 👥 Approval responsibility transferred to user 123
 ```
+
+**✨ New in v1.0.5**: Complete resubmission and delegation logic implementation with proper workflow event triggers and stage transitions.
 
 ### Step 7: Track Progress
 
