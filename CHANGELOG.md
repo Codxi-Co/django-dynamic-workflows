@@ -5,6 +5,25 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.6] - 2025-09-28
+
+### 🔧 DRF Spectacular Compatibility Fixes
+- **Fixed type hint warnings**: Added `@extend_schema_field` decorators to all SerializerMethodField methods in serializers
+- **Resolved GenericForeignKey warnings**: Created custom `GenericForeignKeyField` to properly handle Pipeline.department field serialization
+- **Enhanced API documentation**: All serializer method fields now have proper type annotations for OpenAPI schema generation
+- **Improved field resolution**: Replaced direct department field usage with department_detail field using custom serializer
+
+### 📋 Technical Improvements
+- **Added drf-spectacular import**: Imported extend_schema_field decorator for type hint support
+- **Custom field implementation**: Created GenericForeignKeyField class for consistent GenericForeignKey serialization
+- **Type safety**: All SerializerMethodField methods now have explicit return type declarations
+- **Schema compliance**: Full compatibility with drf-spectacular OpenAPI schema generation
+
+### 🚫 Resolved Warnings
+- Fixed "unable to resolve type hint" warnings for all serializer method fields
+- Resolved Pipeline.department model field resolution issues
+- Eliminated DRF Spectacular W001 warnings across all serializers
+
 ## [1.0.5] - 2025-09-28
 
 ### 🚀 Complete Resubmission & Delegation Implementation

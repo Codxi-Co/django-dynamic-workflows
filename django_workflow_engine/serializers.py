@@ -9,12 +9,30 @@ from django.utils.translation import gettext_lazy as _
 from approval_workflow.choices import ApprovalStatus, RoleSelectionStrategy
 from approval_workflow.models import ApprovalInstance
 from approval_workflow.services import advance_flow, get_current_approval_for_object
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from .choices import ApprovalTypes
 from .logging_utils import log_serializer_validation, serializers_logger
 from .models import Pipeline, Stage, WorkFlow, WorkflowAttachment
 from .services import get_workflow_attachment
+
+
+class GenericForeignKeyField(serializers.Field):
+    """Custom field for handling GenericForeignKey serialization."""
+
+    def to_representation(self, value):
+        """Return a representation of the generic foreign key object."""
+        if value is None:
+            return None
+        return {"id": value.pk, "type": value._meta.label, "name": str(value)}
+
+    def to_internal_value(self, data):
+        """Convert the input data to internal value."""
+        # This would be used for write operations
+        # For now, we'll make it read-only
+        raise serializers.ValidationError("This field is read-only.")
+
 
 logger = logging.getLogger(__name__)
 
@@ -371,10 +389,12 @@ class WorkflowAttachmentSerializer(serializers.ModelSerializer):
             "target_object_repr",
         ]
 
+    @extend_schema_field(serializers.DictField)
     def get_progress_info(self, obj):
         """Get detailed progress information."""
         return obj.get_progress_info()
 
+    @extend_schema_field(serializers.CharField)
     def get_target_object_repr(self, obj):
         """Get string representation of target object."""
         return str(obj.target) if obj.target else None
@@ -403,16 +423,19 @@ class StageDetailSerializer(serializers.ModelSerializer):
             "modified_at",
         ]
 
+    @extend_schema_field(serializers.IntegerField)
     def get_approvals_count(self, obj):
         """Get number of approval configurations in this stage."""
         approvals = obj.stage_info.get("approvals", [])
         return len(approvals)
 
+    @extend_schema_field(serializers.BooleanField)
     def get_has_approvals(self, obj):
         """Check if stage has any approval configurations."""
         approvals = obj.stage_info.get("approvals", [])
         return len(approvals) > 0
 
+    @extend_schema_field(serializers.DictField)
     def get_approval_configuration(self, obj):
         """Get detailed approval configuration for this stage."""
         approvals = obj.stage_info.get("approvals", [])
@@ -464,6 +487,8 @@ class PipelineDetailSerializer(serializers.ModelSerializer):
     stages_count = serializers.SerializerMethodField()
     department_name = serializers.SerializerMethodField()
 
+    department_detail = GenericForeignKeyField(source="department", read_only=True)
+
     class Meta:
         model = Pipeline
         fields = [
@@ -471,7 +496,7 @@ class PipelineDetailSerializer(serializers.ModelSerializer):
             "name_en",
             "name_ar",
             "order",
-            "department",
+            "department_detail",
             "department_name",
             "stages",
             "stages_count",
@@ -479,10 +504,12 @@ class PipelineDetailSerializer(serializers.ModelSerializer):
             "modified_at",
         ]
 
+    @extend_schema_field(serializers.IntegerField)
     def get_stages_count(self, obj):
         """Get number of stages in this pipeline."""
         return obj.stages.count()
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_department_name(self, obj):
         """Get department name if available."""
         return obj.department_name
@@ -515,18 +542,22 @@ class WorkFlowDetailSerializer(serializers.ModelSerializer):
             "modified_at",
         ]
 
+    @extend_schema_field(serializers.IntegerField)
     def get_pipelines_count(self, obj):
         """Get number of pipelines in this workflow."""
         return obj.pipelines.count()
 
+    @extend_schema_field(serializers.IntegerField)
     def get_total_stages_count(self, obj):
         """Get total number of stages across all pipelines."""
         return sum(pipeline.stages.count() for pipeline in obj.pipelines.all())
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_company_name(self, obj):
         """Get company name if available."""
         return obj.company.username if obj.company else None
 
+    @extend_schema_field(serializers.DictField)
     def get_workflow_summary(self, obj):
         """Get workflow summary information."""
         pipelines = obj.pipelines.prefetch_related("stages").all()
@@ -583,14 +614,17 @@ class WorkFlowListSerializer(serializers.ModelSerializer):
             "modified_at",
         ]
 
+    @extend_schema_field(serializers.IntegerField)
     def get_pipelines_count(self, obj):
         """Get number of pipelines in this workflow."""
         return obj.pipelines.count()
 
+    @extend_schema_field(serializers.IntegerField)
     def get_total_stages_count(self, obj):
         """Get total number of stages across all pipelines."""
         return sum(pipeline.stages.count() for pipeline in obj.pipelines.all())
 
+    @extend_schema_field(serializers.CharField(allow_null=True))
     def get_company_name(self, obj):
         """Get company name if available."""
         return obj.company.username if obj.company else None
