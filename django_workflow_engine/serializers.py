@@ -487,7 +487,7 @@ class PipelineDetailSerializer(serializers.ModelSerializer):
     stages_count = serializers.SerializerMethodField()
     department_name = serializers.SerializerMethodField()
 
-    department_detail = GenericForeignKeyField(source="department", read_only=True)
+    department = GenericForeignKeyField(read_only=True)
 
     class Meta:
         model = Pipeline
@@ -496,7 +496,7 @@ class PipelineDetailSerializer(serializers.ModelSerializer):
             "name_en",
             "name_ar",
             "order",
-            "department_detail",
+            "department",
             "department_name",
             "stages",
             "stages_count",
