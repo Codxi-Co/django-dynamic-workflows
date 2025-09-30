@@ -3,6 +3,7 @@ Choice enums for workflow engine and approval workflow statuses and actions.
 """
 
 from django.db import models
+from django.utils.translation import gettext_lazy as _
 
 # Import approval-related choices from the approval_workflow package
 from approval_workflow.choices import ApprovalStatus, RoleSelectionStrategy
@@ -19,9 +20,11 @@ class WorkflowStatus(models.TextChoices):
 class ApprovalTypes(models.TextChoices):
     """Types of approval configurations."""
 
-    SELF = "self", "Self Approval"
-    ROLE = "role", "Role-based Approval"
-    USER = "user", "User-specific Approval"
+    SELF = "self-approved", _("Self Approved")
+    ROLE = "role", _("Role")
+    USER = "user", _("User")
+    TEAM_HEAD = "team_head", _("Team Head")
+    DEPARTMENT_HEAD = "department_head", _("Department Head")
 
 
 class WorkflowAttachmentStatus(models.TextChoices):

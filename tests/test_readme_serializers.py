@@ -605,3 +605,76 @@ class TestReadmeCompleteWorkflowExample:
         executive_approval.refresh_from_db()
         assert len(executive_approval.stage_info["approvals"]) == 1
         assert executive_approval.stage_info["color"] == "#8e44ad"
+
+    def test_update_stage_info_with_role_approval(
+        self, company_user, request_with_user
+    ):
+        """Test updating stage with role-based approval configuration."""
+        from django_workflow_engine.choices import ApprovalTypes, RoleSelectionStrategy
+
+        # Create a workflow with pipeline
+        workflow_data = {
+            "name_en": "Finance Workflow",
+            "name_ar": "سير عمل مالي",
+            "company": company_user.id,
+            "is_active": True,
+            "pipelines": [
+                {
+                    "name_en": "Finance Pipeline",
+                    "name_ar": "خط مالي",
+                    "department_id": 1,
+                    "order": 1,
+                    "number_of_stages": 2,
+                }
+            ],
+        }
+
+        context = {"request": request_with_user, "company_user": company_user}
+        workflow_serializer = WorkFlowSerializer(data=workflow_data, context=context)
+        assert workflow_serializer.is_valid()
+        finance_workflow = workflow_serializer.save()
+
+        # Get the auto-created pipeline
+        finance_pipeline = finance_workflow.pipelines.get(name_en="Finance Pipeline")
+        budget_approval_stage = finance_pipeline.stages.get(order=1)
+
+        # Update stage with the provided configuration
+        stage_config = {
+            "name_en": "Budget Approval",
+            "name_ar": "موافقة الميزانية",
+            "stage_info": {
+                "color": "#f39c12",
+                "approvals": [
+                    {
+                        "approval_type": ApprovalTypes.ROLE,
+                        "user_role": 2,
+                        "role_selection_strategy": RoleSelectionStrategy.ANYONE,
+                        "required_form": 2,
+                    }
+                ],
+            },
+        }
+
+        serializer = StageSerializer(
+            budget_approval_stage, data=stage_config, partial=True
+        )
+        assert serializer.is_valid(), f"Validation errors: {serializer.errors}"
+        updated_stage = serializer.save()
+
+        # Verify the stage was updated correctly
+        updated_stage.refresh_from_db()
+        assert updated_stage.is_active
+        assert updated_stage.name_en == "Budget Approval"
+        assert updated_stage.name_ar == "موافقة الميزانية"
+        assert updated_stage.order == 1
+        assert updated_stage.stage_info["color"] == "#f39c12"
+        assert len(updated_stage.stage_info["approvals"]) == 1
+
+        # Verify approval configuration
+        approval_config = updated_stage.stage_info["approvals"][0]
+        assert approval_config["approval_type"] == ApprovalTypes.ROLE
+        assert approval_config["user_role"] == 2
+        assert (
+            approval_config["role_selection_strategy"] == RoleSelectionStrategy.ANYONE
+        )
+        assert approval_config["required_form"] == 2

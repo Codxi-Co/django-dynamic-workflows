@@ -16,7 +16,7 @@ from django.db import models, transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
-from .choices import ActionType, WorkflowAttachmentStatus, WorkflowStatus
+from .choices import ActionType, ApprovalTypes, WorkflowAttachmentStatus, WorkflowStatus
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -32,7 +32,7 @@ class BaseCompanyModel(models.Model):
         null=True,
         blank=True,
         related_name="%(class)s_company",
-        help_text="Company/Organization user that owns this workflow",
+        help_text=_("Company/Organization user that owns this workflow"),
     )
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     modified_at = models.DateTimeField(auto_now=True, null=True)
@@ -58,8 +58,8 @@ class BaseCompanyModel(models.Model):
 class CompanyBaseWithNamedModel(BaseCompanyModel):
     """Base model with multi-language name support."""
 
-    name_en = models.CharField(max_length=150, help_text="English name")
-    name_ar = models.CharField(max_length=150, help_text="Arabic name")
+    name_en = models.CharField(max_length=150, help_text=_("English name"))
+    name_ar = models.CharField(max_length=150, help_text=_("Arabic name"))
 
     class Meta:
         abstract = True
@@ -246,16 +246,16 @@ class Pipeline(CompanyBaseWithNamedModelWithClone):
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        help_text="Content type of the department model",
+        help_text=_("Content type of the department model"),
     )
     department_id = models.PositiveIntegerField(
         null=True,
         blank=True,
-        help_text="ID of the department object",
+        help_text=_("ID of the department object"),
     )
     department = GenericForeignKey("department_content_type", "department_id")
     order = models.PositiveIntegerField(
-        default=0, help_text="Order of this pipeline in the workflow"
+        default=0, help_text=_("Order of this pipeline in the workflow")
     )
 
     @property
@@ -291,14 +291,14 @@ class Stage(CompanyBaseWithNamedModelWithClone):
         Pipeline, on_delete=models.PROTECT, related_name="stages"
     )
     form_info = models.JSONField(
-        default=list, null=True, help_text="Form configuration for this stage"
+        default=list, null=True, help_text=_("Form configuration for this stage")
     )
     stage_info = models.JSONField(
-        default=dict, null=True, help_text="Stage configuration including approvals"
+        default=dict, null=True, help_text=_("Stage configuration including approvals")
     )
     is_active = models.BooleanField(default=False)
     order = models.PositiveIntegerField(
-        default=0, help_text="Order of this stage in the pipeline"
+        default=0, help_text=_("Order of this stage in the pipeline")
     )
 
     class Meta:
@@ -333,11 +333,21 @@ class Stage(CompanyBaseWithNamedModelWithClone):
         if not approval_type:
             return False
 
+        # Get valid approval types from enum
+        valid_types = [choice[0] for choice in ApprovalTypes.choices]
+        if approval_type not in valid_types:
+            return False
+
         # Validate based on approval type
-        if approval_type == "user" and not approval_config.get("approval_user"):
+        if approval_type == ApprovalTypes.ROLE and not approval_config.get("user_role"):
             return False
-        elif approval_type == "role" and not approval_config.get("user_role"):
+        elif approval_type == ApprovalTypes.USER and not approval_config.get(
+            "approval_user"
+        ):
             return False
+        elif approval_type == ApprovalTypes.SELF:
+            # Self-approved doesn't require additional fields
+            return True
 
         return True
 
@@ -367,10 +377,10 @@ class WorkflowAttachment(models.Model):
     content_type = models.ForeignKey(
         ContentType,
         on_delete=models.CASCADE,
-        help_text="The model type this workflow is attached to",
+        help_text=_("The model type this workflow is attached to"),
     )
     object_id = models.CharField(
-        max_length=255, help_text="The ID of the model instance"
+        max_length=255, help_text=_("The ID of the model instance")
     )
     target = GenericForeignKey("content_type", "object_id")
 
@@ -381,7 +391,7 @@ class WorkflowAttachment(models.Model):
         null=True,
         blank=True,
         related_name="workflow_attachments",
-        help_text="Current stage in the workflow progression",
+        help_text=_("Current stage in the workflow progression"),
     )
     current_pipeline = models.ForeignKey(
         Pipeline,
@@ -389,7 +399,7 @@ class WorkflowAttachment(models.Model):
         null=True,
         blank=True,
         related_name="workflow_attachments",
-        help_text="Current pipeline in the workflow progression",
+        help_text=_("Current pipeline in the workflow progression"),
     )
 
     # Status tracking
@@ -397,7 +407,7 @@ class WorkflowAttachment(models.Model):
         max_length=20,
         choices=WorkflowAttachmentStatus.choices,
         default=WorkflowAttachmentStatus.NOT_STARTED,
-        help_text="Current status of workflow execution",
+        help_text=_("Current status of workflow execution"),
     )
 
     # Metadata
@@ -413,7 +423,9 @@ class WorkflowAttachment(models.Model):
 
     # Additional data storage
     metadata = models.JSONField(
-        default=dict, blank=True, help_text="Additional metadata for workflow execution"
+        default=dict,
+        blank=True,
+        help_text=_("Additional metadata for workflow execution"),
     )
 
     created_at = models.DateTimeField(auto_now_add=True, null=True)
@@ -513,46 +525,48 @@ class WorkflowConfiguration(models.Model):
     content_type = models.OneToOneField(
         ContentType,
         on_delete=models.CASCADE,
-        help_text="The model type that can use workflows",
+        help_text=_("The model type that can use workflows"),
     )
     is_enabled = models.BooleanField(
         default=True,
-        help_text="Whether workflow functionality is enabled for this model",
+        help_text=_("Whether workflow functionality is enabled for this model"),
     )
     auto_start_workflow = models.BooleanField(
         default=False,
-        help_text="Whether to automatically start workflow when object is created",
+        help_text=_("Whether to automatically start workflow when object is created"),
     )
     default_workflow = models.ForeignKey(
         WorkFlow,
         on_delete=models.SET_NULL,
         null=True,
         blank=True,
-        help_text="Default workflow to use for this model",
+        help_text=_("Default workflow to use for this model"),
     )
 
     # Hook configurations
     pre_start_hook = models.CharField(
         max_length=255,
         blank=True,
-        help_text="Python path to function called before workflow starts (e.g., 'myapp.hooks.pre_start')",
+        help_text=_(
+            "Python path to function called before workflow starts (e.g., 'myapp.hooks.pre_start')"
+        ),
     )
     post_complete_hook = models.CharField(
         max_length=255,
         blank=True,
-        help_text="Python path to function called after workflow completes",
+        help_text=_("Python path to function called after workflow completes"),
     )
 
     # Field mappings
     status_field = models.CharField(
         max_length=50,
         blank=True,
-        help_text="Field name on the model to update with workflow status",
+        help_text=_("Field name on the model to update with workflow status"),
     )
     stage_field = models.CharField(
         max_length=50,
         blank=True,
-        help_text="Field name on the model to store current stage",
+        help_text=_("Field name on the model to store current stage"),
     )
 
     created_at = models.DateTimeField(auto_now_add=True, null=True)
@@ -576,14 +590,16 @@ class WorkflowAction(models.Model):
     action_type = models.CharField(
         max_length=50,
         choices=ActionType.choices,
-        help_text="The type of action/event that triggers this action",
+        help_text=_("The type of action/event that triggers this action"),
     )
     function_path = models.CharField(
         max_length=255,
-        help_text="Python path to the function to execute (e.g., 'myapp.actions.send_email')",
+        help_text=_(
+            "Python path to the function to execute (e.g., 'myapp.actions.send_email')"
+        ),
     )
     is_active = models.BooleanField(
-        default=True, help_text="Whether this action is active"
+        default=True, help_text=_("Whether this action is active")
     )
 
     # Scope - only one of these should be set (inheritance system)
@@ -593,7 +609,7 @@ class WorkflowAction(models.Model):
         null=True,
         blank=True,
         related_name="actions",
-        help_text="Workflow this action belongs to (workflow-level action)",
+        help_text=_("Workflow this action belongs to (workflow-level action)"),
     )
     pipeline = models.ForeignKey(
         Pipeline,
@@ -601,7 +617,7 @@ class WorkflowAction(models.Model):
         null=True,
         blank=True,
         related_name="actions",
-        help_text="Pipeline this action belongs to (pipeline-level action)",
+        help_text=_("Pipeline this action belongs to (pipeline-level action)"),
     )
     stage = models.ForeignKey(
         Stage,
@@ -609,18 +625,18 @@ class WorkflowAction(models.Model):
         null=True,
         blank=True,
         related_name="actions",
-        help_text="Stage this action belongs to (stage-level action)",
+        help_text=_("Stage this action belongs to (stage-level action)"),
     )
 
     # Additional configuration
     parameters = models.JSONField(
         default=dict,
         blank=True,
-        help_text="Additional parameters to pass to the action function",
+        help_text=_("Additional parameters to pass to the action function"),
     )
     order = models.PositiveIntegerField(
         default=0,
-        help_text="Execution order when multiple actions exist for the same event",
+        help_text=_("Execution order when multiple actions exist for the same event"),
     )
 
     # Metadata

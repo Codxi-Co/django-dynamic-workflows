@@ -7,7 +7,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: django-workflow-engine\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2024-01-01 12:00+0000\n"
+"POT-Creation-Date: 2025-09-30 15:05+0000\n"
 "PO-Revision-Date: 2024-01-01 12:00+0000\n"
 "Last-Translator: \n"
 "Language-Team: English\n"
@@ -17,239 +17,433 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
-# Model verbose names and help texts
-msgid "Workflow"
-msgstr "Workflow"
+#: django_workflow_engine/choices.py:23
+#, fuzzy
+#| msgid "Before Approve"
+msgid "Self Approved"
+msgstr "Before Approve"
 
-msgid "Workflows"
-msgstr "Workflows"
+#: django_workflow_engine/choices.py:24
+msgid "Role"
+msgstr ""
 
-msgid "Pipeline"
-msgstr "Pipeline"
+#: django_workflow_engine/choices.py:25
+msgid "User"
+msgstr ""
 
-msgid "Pipelines"
-msgstr "Pipelines"
+#: django_workflow_engine/choices.py:26
+msgid "Team Head"
+msgstr ""
 
-msgid "Stage"
-msgstr "Stage"
+#: django_workflow_engine/choices.py:27
+#, fuzzy
+#| msgid "Department"
+msgid "Department Head"
+msgstr "Department"
 
-msgid "Stages"
-msgstr "Stages"
+#: django_workflow_engine/models.py:35
+msgid "Company/Organization user that owns this workflow"
+msgstr ""
 
-msgid "Workflow Attachment"
-msgstr "Workflow Attachment"
+#: django_workflow_engine/models.py:61
+msgid "English name"
+msgstr ""
 
-msgid "Workflow Attachments"
-msgstr "Workflow Attachments"
+#: django_workflow_engine/models.py:62
+msgid "Arabic name"
+msgstr ""
 
-msgid "Workflow Configuration"
-msgstr "Workflow Configuration"
+#: django_workflow_engine/models.py:80
+msgid "The original object this was cloned from"
+msgstr ""
 
-msgid "Workflow Configurations"
-msgstr "Workflow Configurations"
+#: django_workflow_engine/models.py:81
+msgid "Cloned From"
+msgstr ""
 
-msgid "Workflow Action"
-msgstr "Workflow Action"
+#: django_workflow_engine/models.py:131
+msgid "Status of the workflow"
+msgstr ""
 
-msgid "Workflow Actions"
-msgstr "Workflow Actions"
-
-# Field labels
-msgid "Name (English)"
-msgstr "Name (English)"
-
-msgid "Name (Arabic)"
-msgstr "Name (Arabic)"
-
-msgid "Description"
-msgstr "Description"
-
+#: django_workflow_engine/models.py:132
 msgid "Status"
 msgstr "Status"
 
-msgid "Order"
-msgstr "Order"
+#: django_workflow_engine/models.py:135
+#, fuzzy
+#| msgid "Workflow Action"
+msgid "Workflow description"
+msgstr "Workflow Action"
 
+#: django_workflow_engine/models.py:135
+msgid "Description"
+msgstr "Description"
+
+# Service messages
+#: django_workflow_engine/models.py:139
+#, fuzzy
+#| msgid "Workflow '{name}' is not active and cannot be attached"
+msgid "Whether this workflow is active and can be used"
+msgstr "Workflow '{name}' is not active and cannot be attached"
+
+#: django_workflow_engine/models.py:140
 msgid "Is Active"
 msgstr "Is Active"
 
-msgid "Created By"
-msgstr "Created By"
+# Model verbose names and help texts
+#: django_workflow_engine/models.py:146
+msgid "Workflow"
+msgstr "Workflow"
 
-msgid "Created At"
-msgstr "Created At"
+#: django_workflow_engine/models.py:147
+msgid "Workflows"
+msgstr "Workflows"
 
-msgid "Updated At"
-msgstr "Updated At"
+#: django_workflow_engine/models.py:249
+msgid "Content type of the department model"
+msgstr ""
 
-msgid "Company"
-msgstr "Company"
+#: django_workflow_engine/models.py:254
+msgid "ID of the department object"
+msgstr ""
 
-msgid "Department"
-msgstr "Department"
+#: django_workflow_engine/models.py:258
+msgid "Order of this pipeline in the workflow"
+msgstr ""
 
-# Status choices
-msgid "Draft"
-msgstr "Draft"
+#: django_workflow_engine/models.py:294
+msgid "Form configuration for this stage"
+msgstr ""
 
-msgid "Active"
-msgstr "Active"
+#: django_workflow_engine/models.py:297
+msgid "Stage configuration including approvals"
+msgstr ""
 
-msgid "Inactive"
-msgstr "Inactive"
+#: django_workflow_engine/models.py:301
+msgid "Order of this stage in the pipeline"
+msgstr ""
 
-msgid "Archived"
-msgstr "Archived"
+#: django_workflow_engine/models.py:378
+msgid "The model type this workflow is attached to"
+msgstr ""
 
-msgid "Not Started"
-msgstr "Not Started"
+#: django_workflow_engine/models.py:381
+msgid "The ID of the model instance"
+msgstr ""
 
-msgid "In Progress"
-msgstr "In Progress"
+#: django_workflow_engine/models.py:392
+msgid "Current stage in the workflow progression"
+msgstr ""
 
-msgid "Completed"
-msgstr "Completed"
+#: django_workflow_engine/models.py:400
+msgid "Current pipeline in the workflow progression"
+msgstr ""
 
-msgid "Rejected"
-msgstr "Rejected"
+#: django_workflow_engine/models.py:408
+msgid "Current status of workflow execution"
+msgstr ""
 
-msgid "Cancelled"
-msgstr "Cancelled"
+#: django_workflow_engine/models.py:424
+msgid "Additional metadata for workflow execution"
+msgstr ""
 
-# Action types
-msgid "Before Start"
-msgstr "Before Start"
+#: django_workflow_engine/models.py:524
+msgid "The model type that can use workflows"
+msgstr ""
 
-msgid "After Start"
-msgstr "After Start"
+#: django_workflow_engine/models.py:528
+msgid "Whether workflow functionality is enabled for this model"
+msgstr ""
 
-msgid "Before Approve"
-msgstr "Before Approve"
+#: django_workflow_engine/models.py:532
+msgid "Whether to automatically start workflow when object is created"
+msgstr ""
 
-msgid "After Approve"
-msgstr "After Approve"
+#: django_workflow_engine/models.py:539
+#, fuzzy
+#| msgid "No workflow attached to this object"
+msgid "Default workflow to use for this model"
+msgstr "No workflow attached to this object"
 
-msgid "Before Reject"
-msgstr "Before Reject"
+#: django_workflow_engine/models.py:546
+msgid ""
+"Python path to function called before workflow starts (e.g., "
+"'myapp.hooks.pre_start')"
+msgstr ""
 
-msgid "After Reject"
-msgstr "After Reject"
+#: django_workflow_engine/models.py:551
+msgid "Python path to function called after workflow completes"
+msgstr ""
 
-msgid "Before Move Stage"
-msgstr "Before Move Stage"
+#: django_workflow_engine/models.py:558
+msgid "Field name on the model to update with workflow status"
+msgstr ""
 
-msgid "After Move Stage"
-msgstr "After Move Stage"
+#: django_workflow_engine/models.py:563
+msgid "Field name on the model to store current stage"
+msgstr ""
 
-msgid "Before Move Pipeline"
-msgstr "Before Move Pipeline"
+#: django_workflow_engine/models.py:587
+msgid "The type of action/event that triggers this action"
+msgstr ""
 
-msgid "After Move Pipeline"
-msgstr "After Move Pipeline"
+#: django_workflow_engine/models.py:591
+msgid ""
+"Python path to the function to execute (e.g., 'myapp.actions.send_email')"
+msgstr ""
 
-msgid "Before Complete"
-msgstr "Before Complete"
+#: django_workflow_engine/models.py:594
+msgid "Whether this action is active"
+msgstr ""
 
-msgid "After Complete"
-msgstr "After Complete"
+#: django_workflow_engine/models.py:604
+msgid "Workflow this action belongs to (workflow-level action)"
+msgstr ""
+
+#: django_workflow_engine/models.py:612
+msgid "Pipeline this action belongs to (pipeline-level action)"
+msgstr ""
+
+#: django_workflow_engine/models.py:620
+msgid "Stage this action belongs to (stage-level action)"
+msgstr ""
+
+#: django_workflow_engine/models.py:627
+msgid "Additional parameters to pass to the action function"
+msgstr ""
+
+#: django_workflow_engine/models.py:631
+msgid "Execution order when multiple actions exist for the same event"
+msgstr ""
 
 # Serializer messages
+#: django_workflow_engine/serializers.py:62
 msgid "Action to perform on the workflow stage"
 msgstr "Action to perform on the workflow stage"
 
+#: django_workflow_engine/serializers.py:67
 msgid "Reason for rejection, delegation, or resubmission"
 msgstr "Reason for rejection, delegation, or resubmission"
 
+#: django_workflow_engine/serializers.py:72
 msgid "Form data for approval (if required by stage)"
 msgstr "Form data for approval (if required by stage)"
 
+#: django_workflow_engine/serializers.py:76
 msgid "User ID for delegation (required for delegation action)"
 msgstr "User ID for delegation (required for delegation action)"
 
+#: django_workflow_engine/serializers.py:80
 msgid "Stage ID for resubmission (required for resubmission action)"
 msgstr "Stage ID for resubmission (required for resubmission action)"
 
 # Validation messages
-msgid "Object instance is required for workflow approval"
+#: django_workflow_engine/serializers.py:88
+#, fuzzy
+#| msgid "Object instance is required for workflow approval"
+msgid ""
+"Object instance is required for workflow approval. Use: "
+"WorkflowApprovalSerializer(instance=my_object, data={...})"
 msgstr "Object instance is required for workflow approval"
 
+#: django_workflow_engine/serializers.py:95
 msgid "No workflow attached to this object"
 msgstr "No workflow attached to this object"
 
+#: django_workflow_engine/serializers.py:99
+#, python-brace-format
 msgid "Workflow is not in progress (current status: {status})"
 msgstr "Workflow is not in progress (current status: {status})"
 
+#: django_workflow_engine/serializers.py:108
 msgid "No current approval step found for this object"
 msgstr "No current approval step found for this object"
 
+#: django_workflow_engine/serializers.py:159
 msgid "Reason is required for rejection"
 msgstr "Reason is required for rejection"
 
-msgid "Reason is required for resubmission"
-msgstr "Reason is required for resubmission"
+#: django_workflow_engine/serializers.py:661
+msgid "Number of stages to auto-create for this pipeline"
+msgstr ""
 
-msgid "Stage does not belong to current workflow"
-msgstr "Stage does not belong to current workflow"
+#~ msgid "Pipeline"
+#~ msgstr "Pipeline"
 
-msgid "Invalid stage ID"
-msgstr "Invalid stage ID"
+#~ msgid "Pipelines"
+#~ msgstr "Pipelines"
 
-msgid "Invalid user ID"
-msgstr "Invalid user ID"
+#~ msgid "Stage"
+#~ msgstr "Stage"
 
-# Service messages
-msgid "Workflow '{name}' is not active and cannot be attached"
-msgstr "Workflow '{name}' is not active and cannot be attached"
+#~ msgid "Stages"
+#~ msgstr "Stages"
 
-msgid "No workflow attachment found for object"
-msgstr "No workflow attachment found for object"
+#~ msgid "Workflow Attachment"
+#~ msgstr "Workflow Attachment"
 
-msgid "Workflow '{name}' attached to {object}"
-msgstr "Workflow '{name}' attached to {object}"
+#~ msgid "Workflow Attachments"
+#~ msgstr "Workflow Attachments"
 
-msgid "Workflow '{name}' updated for {object}"
-msgstr "Workflow '{name}' updated for {object}"
+#~ msgid "Workflow Configuration"
+#~ msgstr "Workflow Configuration"
+
+#~ msgid "Workflow Configurations"
+#~ msgstr "Workflow Configurations"
+
+#~ msgid "Workflow Actions"
+#~ msgstr "Workflow Actions"
+
+# Field labels
+#~ msgid "Name (English)"
+#~ msgstr "Name (English)"
+
+#~ msgid "Name (Arabic)"
+#~ msgstr "Name (Arabic)"
+
+#~ msgid "Order"
+#~ msgstr "Order"
+
+#~ msgid "Created By"
+#~ msgstr "Created By"
+
+#~ msgid "Created At"
+#~ msgstr "Created At"
+
+#~ msgid "Updated At"
+#~ msgstr "Updated At"
+
+#~ msgid "Company"
+#~ msgstr "Company"
+
+# Status choices
+#~ msgid "Draft"
+#~ msgstr "Draft"
+
+#~ msgid "Active"
+#~ msgstr "Active"
+
+#~ msgid "Inactive"
+#~ msgstr "Inactive"
+
+#~ msgid "Archived"
+#~ msgstr "Archived"
+
+#~ msgid "Not Started"
+#~ msgstr "Not Started"
+
+#~ msgid "In Progress"
+#~ msgstr "In Progress"
+
+#~ msgid "Completed"
+#~ msgstr "Completed"
+
+#~ msgid "Rejected"
+#~ msgstr "Rejected"
+
+#~ msgid "Cancelled"
+#~ msgstr "Cancelled"
+
+# Action types
+#~ msgid "Before Start"
+#~ msgstr "Before Start"
+
+#~ msgid "After Start"
+#~ msgstr "After Start"
+
+#~ msgid "After Approve"
+#~ msgstr "After Approve"
+
+#~ msgid "Before Reject"
+#~ msgstr "Before Reject"
+
+#~ msgid "After Reject"
+#~ msgstr "After Reject"
+
+#~ msgid "Before Move Stage"
+#~ msgstr "Before Move Stage"
+
+#~ msgid "After Move Stage"
+#~ msgstr "After Move Stage"
+
+#~ msgid "Before Move Pipeline"
+#~ msgstr "Before Move Pipeline"
+
+#~ msgid "After Move Pipeline"
+#~ msgstr "After Move Pipeline"
+
+#~ msgid "Before Complete"
+#~ msgstr "Before Complete"
+
+#~ msgid "After Complete"
+#~ msgstr "After Complete"
+
+#~ msgid "Reason is required for resubmission"
+#~ msgstr "Reason is required for resubmission"
+
+#~ msgid "Stage does not belong to current workflow"
+#~ msgstr "Stage does not belong to current workflow"
+
+#~ msgid "Invalid stage ID"
+#~ msgstr "Invalid stage ID"
+
+#~ msgid "Invalid user ID"
+#~ msgstr "Invalid user ID"
+
+#~ msgid "No workflow attachment found for object"
+#~ msgstr "No workflow attachment found for object"
+
+#~ msgid "Workflow '{name}' attached to {object}"
+#~ msgstr "Workflow '{name}' attached to {object}"
+
+#~ msgid "Workflow '{name}' updated for {object}"
+#~ msgstr "Workflow '{name}' updated for {object}"
 
 # Log messages
-msgid "Workflow created"
-msgstr "Workflow created"
+#~ msgid "Workflow created"
+#~ msgstr "Workflow created"
 
-msgid "Workflow attached"
-msgstr "Workflow attached"
+#~ msgid "Workflow attached"
+#~ msgstr "Workflow attached"
 
-msgid "Workflow started"
-msgstr "Workflow started"
+#~ msgid "Workflow started"
+#~ msgstr "Workflow started"
 
-msgid "Stage moved"
-msgstr "Stage moved"
+#~ msgid "Stage moved"
+#~ msgstr "Stage moved"
 
-msgid "Workflow completed"
-msgstr "Workflow completed"
+#~ msgid "Workflow completed"
+#~ msgstr "Workflow completed"
 
-msgid "Workflow rejected"
-msgstr "Workflow rejected"
+#~ msgid "Workflow rejected"
+#~ msgstr "Workflow rejected"
 
 # Email templates
-msgid "Workflow Approval Required"
-msgstr "Workflow Approval Required"
+#~ msgid "Workflow Approval Required"
+#~ msgstr "Workflow Approval Required"
 
-msgid "Workflow Approved"
-msgstr "Workflow Approved"
+#~ msgid "Workflow Approved"
+#~ msgstr "Workflow Approved"
 
-msgid "Workflow Rejected"
-msgstr "Workflow Rejected"
+#~ msgid "Workflow Rejected"
+#~ msgstr "Workflow Rejected"
 
-msgid "Workflow Completed"
-msgstr "Workflow Completed"
+#~ msgid "Workflow Completed"
+#~ msgstr "Workflow Completed"
 
-msgid "Your approval is required for the workflow: {workflow_name}"
-msgstr "Your approval is required for the workflow: {workflow_name}"
+#~ msgid "Your approval is required for the workflow: {workflow_name}"
+#~ msgstr "Your approval is required for the workflow: {workflow_name}"
 
-msgid "The workflow {workflow_name} has been approved and moved to the next stage."
-msgstr "The workflow {workflow_name} has been approved and moved to the next stage."
+#~ msgid ""
+#~ "The workflow {workflow_name} has been approved and moved to the next "
+#~ "stage."
+#~ msgstr ""
+#~ "The workflow {workflow_name} has been approved and moved to the next "
+#~ "stage."
 
-msgid "The workflow {workflow_name} has been rejected with reason: {reason}"
-msgstr "The workflow {workflow_name} has been rejected with reason: {reason}"
+#~ msgid "The workflow {workflow_name} has been rejected with reason: {reason}"
+#~ msgstr ""
+#~ "The workflow {workflow_name} has been rejected with reason: {reason}"
 
-msgid "The workflow {workflow_name} has been completed successfully."
-msgstr "The workflow {workflow_name} has been completed successfully."
+#~ msgid "The workflow {workflow_name} has been completed successfully."
+#~ msgstr "The workflow {workflow_name} has been completed successfully."

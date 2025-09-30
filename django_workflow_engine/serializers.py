@@ -800,6 +800,40 @@ class StageSerializer(serializers.ModelSerializer):
             "pipeline": {"required": False},  # Set by parent PipelineSerializer
         }
 
+    def validate(self, attrs):
+        """Validate pipeline is provided either from URL or body."""
+        # If updating existing instance, pipeline is already set
+        if self.instance:
+            return attrs
+
+        # For create operations, check pipeline from context (URL) or body
+        pipeline = attrs.get("pipeline")
+
+        # Check if pipeline is in context (from URL kwargs)
+        if not pipeline and self.context.get("view"):
+            view = self.context["view"]
+            pipeline_id = view.kwargs.get("pipeline") or view.kwargs.get("pipeline_pk")
+            if pipeline_id:
+                try:
+                    from .models import Pipeline
+
+                    pipeline = Pipeline.objects.get(id=pipeline_id)
+                    attrs["pipeline"] = pipeline
+                except Pipeline.DoesNotExist:
+                    raise serializers.ValidationError(
+                        {"pipeline": f"Pipeline with id {pipeline_id} does not exist"}
+                    )
+
+        # If still no pipeline, it's required
+        if not pipeline:
+            raise serializers.ValidationError(
+                {
+                    "pipeline": "Pipeline is required. Provide it in the request body or URL."
+                }
+            )
+
+        return attrs
+
     def validate_stage_info(self, value):
         """Validate stage_info structure."""
         if not isinstance(value, dict):

@@ -5,6 +5,54 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.8] - 2025-09-30
+
+### 🎯 ApprovalTypes Enhancements
+- **Updated ApprovalTypes enum**: Added new approval type choices with translation support
+  - `SELF = "self-approved"` - Self approval type
+  - `ROLE = "role"` - Role-based approval
+  - `USER = "user"` - User-specific approval
+  - `TEAM_HEAD = "team_head"` - Team head approval (reserved for future use)
+  - `DEPARTMENT_HEAD = "department_head"` - Department head approval (reserved for future use)
+- **Dynamic validation**: Stage model now validates approval types against ApprovalTypes enum dynamically
+- **Translation ready**: All approval type labels now use `gettext_lazy` for internationalization
+
+### 🌍 Translation Improvements
+- **Complete model translation**: All `help_text` and `verbose_name` strings now wrapped with `_()` for translation
+- **BaseCompanyModel translations**: Company, name fields fully translatable
+- **Pipeline model translations**: Department fields with proper translation support
+- **Stage model translations**: Form and stage info fields translated
+- **WorkflowAttachment translations**: All workflow state fields translatable
+- **WorkflowConfiguration translations**: Hook and field mapping descriptions translated
+- **WorkflowAction translations**: Action configuration fields fully translated
+
+### 🔧 StageSerializer Enhancements
+- **Pipeline validation**: Added smart pipeline detection from URL or request body
+- **URL parameter support**: Automatically extracts `pipeline` or `pipeline_pk` from URL kwargs
+- **Body parameter support**: Falls back to pipeline from request body if not in URL
+- **Clear error messages**: Descriptive validation error when pipeline is missing
+- **Create vs Update logic**: Pipeline validation only required for create operations
+
+### ✅ Testing
+- **Added stage update test**: New test case `test_update_stage_info_with_role_approval`
+- **Validates name fields**: Tests confirm Stage has `name_en` and `name_ar` fields
+- **Approval configuration test**: Verifies role-based approval with all required fields
+- **11/11 tests passing**: All serializer tests pass with new changes
+
+### 🗄️ Database Migrations
+- **Migration 0002**: Created migration for model option changes
+- **Index optimization**: Renamed indexes for better clarity
+- **Field updates**: Updated cloned_from fields with proper help text
+- **Status choices**: Updated WorkflowStatus and WorkflowAttachmentStatus choices
+
+### 📋 Technical Details
+- **Backward compatible**: All changes maintain backward compatibility
+- **No breaking changes**: Existing code continues to work without modifications
+- **Enhanced validation**: More robust approval type validation using enum
+- **Better DX**: Improved developer experience with clearer error messages
+
+---
+
 ## [1.0.7] - 2025-09-30
 
 ### 🚀 New Workflow Serializers
