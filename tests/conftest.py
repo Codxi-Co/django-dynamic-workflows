@@ -76,6 +76,9 @@ def fast_workflow_factory():
             name_ar="مرحلة تجريبية",
             created_by=user,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": user.id}]
+            },
         )
 
         workflow.update_active_status()

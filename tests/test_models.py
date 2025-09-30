@@ -100,6 +100,9 @@ class WorkFlowModelTest(TestCase):
             created_by=self.user,
             order=0,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         # Refresh workflow
@@ -332,6 +335,9 @@ class WorkflowAttachmentModelTest(TestCase):
             created_by=self.user,
             order=0,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
     def test_workflow_attachment_creation(self):
@@ -362,6 +368,9 @@ class WorkflowAttachmentModelTest(TestCase):
             created_by=self.user,
             order=1,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         content_type = ContentType.objects.get_for_model(User)

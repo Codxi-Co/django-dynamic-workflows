@@ -74,6 +74,9 @@ class DefaultActionsTest(TestCase):
             name_ar="مرحلة تجريبية",
             is_active=True,
             created_by=self.user,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         # Update workflow active status
@@ -483,6 +486,9 @@ class TestDefaultActionsIntegration:
             name_ar="مرحلة تجريبية",
             is_active=True,
             created_by=user,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": user.id}]
+            },
         )
 
         # Update workflow active status

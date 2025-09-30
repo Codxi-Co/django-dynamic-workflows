@@ -5,6 +5,66 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.7] - 2025-09-30
+
+### 🚀 New Workflow Serializers
+- **Added WorkFlowSerializer**: Complete nested creation of workflows with pipelines and stages in a single API call
+- **Added PipelineSerializer**: Create pipelines with automatic stage generation based on `number_of_stages` parameter
+- **Added StageSerializer**: Create and update stages with approval configuration validation
+- **Nested serialization support**: Create entire workflow hierarchies in one request with proper validation
+- **README examples now functional**: All serializer examples in documentation are now fully working
+
+### ⚡ Workflow Auto-Activation System
+- **Intelligent stage activation**: Stages automatically activate when approval configurations are added
+- **Auto-deactivation**: Stages deactivate when all approvals are removed
+- **Workflow-level activation**: Workflows automatically activate when all stages are properly configured
+- **Real-time validation**: Stage and workflow status updates happen automatically on configuration changes
+- **Performance optimized**: Added `skip_workflow_update` parameter to Stage.save() for bulk operations
+
+### 🔧 Serializer Improvements
+- **Refactored WorkflowApprovalSerializer**: Now uses standard DRF `self.instance` pattern instead of custom `object_instance` parameter
+- **Developer flexibility**: All serializers now use `fields = "__all__"` in Meta, allowing easy customization by subclassing
+- **Better context handling**: Automatic `company` extraction from context when not provided
+- **Standard DRF patterns**: Simplified serializer initialization following Django Rest Framework conventions
+- **Comprehensive logging**: Added structured logging throughout all serializers using WorkflowLogger
+
+### 🎯 Validation & Error Handling
+- **Case-insensitive approval types**: Approval types ('user', 'role', 'self') now validated case-insensitively
+- **Case-insensitive strategies**: Role selection strategies ('anyone', 'consensus', etc.) validated case-insensitively
+- **Stage completion validation**: Stages require proper approval configuration to be considered complete
+- **Better error messages**: Clear validation errors with helpful guidance for developers
+
+### 🚀 Performance Optimizations
+- **Query optimization**: Added `prefetch_related` to workflow validation to prevent N+1 queries
+- **Bulk operation support**: Stage.save() accepts `skip_workflow_update` flag for bulk operations
+- **Reduced redundant validation**: Workflow active status only updates when necessary
+- **Optimized test fixtures**: Test setup optimized to reduce unnecessary workflow validations
+
+### 📚 Documentation Updates
+- **Fixed README examples**: Updated all code examples to use correct lowercase approval types and strategies
+- **Added comprehensive tests**: 10 new tests validating all README serializer examples work correctly
+- **Better developer guidance**: Enhanced documentation with working examples and best practices
+
+### 🧪 Testing Improvements
+- **All tests passing**: 143/143 tests passing with new validation requirements
+- **Updated test fixtures**: All test stages now include proper `stage_info` with approvals
+- **README example tests**: New test file validates all documentation examples work correctly
+- **Improved test patterns**: Tests now follow standard DRF patterns with `instance=` parameter
+
+### 🛠 Technical Details
+- **Migration path**: Existing workflows need stages updated with approval configurations to activate
+- **Backward compatible**: No breaking changes to existing API or data structures
+- **Standard DRF usage**: WorkflowApprovalSerializer now follows standard serializer patterns
+- **Proper field configuration**: Read-only and write-only fields properly configured across all serializers
+
+### 📋 Migration Notes
+- Existing stages without approval configurations will be inactive until approvals are added
+- WorkflowApprovalSerializer usage changed from `object_instance=obj` to `instance=obj` (standard DRF)
+- All serializers can be customized by subclassing and overriding `fields` in Meta
+- Test execution time: ~84 seconds for 143 tests (integration tests with full database setup)
+
+---
+
 ## [1.0.6] - 2025-09-28
 
 ### 🔧 DRF Spectacular Compatibility Fixes

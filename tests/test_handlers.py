@@ -93,6 +93,9 @@ class WorkflowApprovalHandlerTest(TestCase):
             created_by=self.user,
             order=0,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         self.stage2 = Stage.objects.create(
@@ -103,6 +106,9 @@ class WorkflowApprovalHandlerTest(TestCase):
             created_by=self.user,
             order=1,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         # Create workflow attachment
@@ -257,6 +263,9 @@ class HandlerRegistrationTest(TestCase):
             name_ar="مرحلة تجريبية",
             is_active=True,
             created_by=self.user,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         # Update workflow active status
@@ -370,6 +379,9 @@ class TestHandlerIntegrationWithApprovalWorkflow:
             created_by=user,
             order=0,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": user.id}]
+            },
         )
 
         stage2 = Stage.objects.create(
@@ -380,6 +392,9 @@ class TestHandlerIntegrationWithApprovalWorkflow:
             created_by=user,
             order=1,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": user.id}]
+            },
         )
 
         # Attach workflow

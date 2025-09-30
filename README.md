@@ -21,6 +21,122 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 pip install django-dynamic-workflows
 ```
 
+## Configuration
+
+The Django Workflow Engine can be configured through your Django settings:
+
+```python
+# settings.py
+DJANGO_WORKFLOW_ENGINE = {
+    # Department Model Mapping (NEW)
+    # Map the department GenericForeignKey to any model in your project
+    'DEPARTMENT_MODEL': 'myapp.Department',  # Optional: specify your department model
+
+    # Model Configuration
+    'ENABLED_MODELS': [
+        'myapp.PurchaseRequest',
+        'crm.Opportunity',
+        'support.Ticket',
+    ],
+
+    # Default field name for workflow status
+    'DEFAULT_STATUS_FIELD': 'workflow_status',
+
+    # Workflow Mappings
+    'MODEL_WORKFLOW_MAPPINGS': {
+        'myapp.PurchaseRequest': ['purchase_approval', 'emergency_approval'],
+        'crm.Opportunity': ['sales_process'],
+    },
+
+    # Auto-start Configuration
+    'AUTO_START_WORKFLOWS': {
+        'myapp.PurchaseRequest': {
+            'workflow_slug': 'purchase_approval',
+            'conditions': {'amount__gte': 1000}  # Only for amounts >= 1000
+        }
+    },
+
+    # Permissions
+    'PERMISSIONS': {
+        'REQUIRE_PERMISSION_TO_START': True,
+        'REQUIRE_PERMISSION_TO_APPROVE': True,
+    }
+}
+```
+
+### Department Model Configuration
+
+The `DEPARTMENT_MODEL` setting allows you to map the department field in workflows to any model in your project:
+
+```python
+# Map to your custom Department model
+'DEPARTMENT_MODEL': 'myapp.Department'
+
+# Map to Django's built-in Group model
+'DEPARTMENT_MODEL': 'auth.Group'
+
+# Map to any other model with a name field
+'DEPARTMENT_MODEL': 'companies.Division'
+```
+
+This provides maximum flexibility for organizing workflows by departments, divisions, teams, or any organizational structure.
+
+### Company Model Architecture
+
+**Important**: The `company` field in workflow models uses Django's `AUTH_USER_MODEL` (User model) for maximum flexibility:
+
+```python
+# Workflow models use User as company for multi-tenant support:
+class WorkFlow(models.Model):
+    company = models.ForeignKey(
+        settings.AUTH_USER_MODEL,  # Uses your User model
+        on_delete=models.SET_NULL,
+        related_name="workflow_company"
+    )
+```
+
+#### Why User Model for Company?
+
+This design supports various multi-tenant architectures:
+
+```python
+# Single Company per User
+user.username = "acme_corp"
+user.email = "admin@acmecorp.com"
+
+# Multi-tenant SaaS where users represent companies
+company_user = User.objects.create(
+    username="company_123",
+    email="admin@company123.com"
+)
+
+# Enterprise where User has company profile
+user.profile.company_name = "Enterprise Corp"
+```
+
+#### Usage Examples
+
+```python
+# Create workflows for specific companies (users)
+workflow = WorkFlow.objects.create(
+    company=company_user,  # User representing the company
+    name_en="Company Workflow"
+)
+
+# Filter workflows by company
+company_workflows = WorkFlow.objects.filter(company=company_user)
+
+# Multi-tenant isolation
+user_workflows = WorkFlow.objects.filter(company=request.user)
+```
+
+This approach provides flexibility for:
+- 🏢 **Multi-tenant SaaS**: Each tenant has a user representing their company
+- 🏛️ **Enterprise**: Companies can be mapped through user profiles or groups
+- 🔒 **Security**: Natural permission boundaries through Django's user system
+- 📊 **Scalability**: Leverage Django's user management and authentication
+
+
 ## Quick Start
 
 1. Add to INSTALLED_APPS:
@@ -306,9 +422,9 @@ stage_config = {
         'color': '#3498db',
         'approvals': [
             {
-                'approval_type': 'ROLE',  # Role-based approval
+                'approval_type': 'role',  # Role-based approval (lowercase)
                 'user_role': 1,  # Finance Reviewer Role ID
-                'role_selection_strategy': 'RANDOM',
+                'role_selection_strategy': 'random',  # Lowercase (also supports 'anyone', 'consensus', 'round_robin', 'supervisor')
                 'required_form': 1  # Initial Review Form ID
             }
         ]
@@ -326,7 +442,7 @@ stage_config = {
         'color': '#f39c12',
         'approvals': [
             {
-                'approval_type': 'ROLE',
+                'approval_type': 'role',  # Lowercase
                 'user_role': 2,  # Budget Manager Role ID
                 'role_selection_strategy': 'anyone',
                 'required_form': 2  # Budget Approval Form ID
@@ -346,7 +462,7 @@ stage_config = {
         'color': '#27ae60',
         'approvals': [
             {
-                'approval_type': 'USER',  # Specific user approval
+                'approval_type': 'user',  # Specific user approval (lowercase)
                 'approval_user': 123,  # CFO User ID
                 'required_form': 3  # Final Approval Form ID
             }
@@ -365,9 +481,9 @@ stage_config = {
         'color': '#8e44ad',
         'approvals': [
             {
-                'approval_type': 'ROLE',
+                'approval_type': 'role',  # Lowercase
                 'user_role': 3,  # Executive Role ID
-                'role_selection_strategy': 'SUPERVISOR'
+                'role_selection_strategy': 'supervisor'  # Lowercase
                 # No required_form - executives can approve without additional forms
             }
         ]
@@ -901,121 +1017,6 @@ def monitor_workflow_performance():
         ]
     }
 ```
-
-## Configuration
-
-The Django Workflow Engine can be configured through your Django settings:
-
-```python
-# settings.py
-DJANGO_WORKFLOW_ENGINE = {
-    # Department Model Mapping (NEW)
-    # Map the department GenericForeignKey to any model in your project
-    'DEPARTMENT_MODEL': 'myapp.Department',  # Optional: specify your department model
-
-    # Model Configuration
-    'ENABLED_MODELS': [
-        'myapp.PurchaseRequest',
-        'crm.Opportunity',
-        'support.Ticket',
-    ],
-
-    # Default field name for workflow status
-    'DEFAULT_STATUS_FIELD': 'workflow_status',
-
-    # Workflow Mappings
-    'MODEL_WORKFLOW_MAPPINGS': {
-        'myapp.PurchaseRequest': ['purchase_approval', 'emergency_approval'],
-        'crm.Opportunity': ['sales_process'],
-    },
-
-    # Auto-start Configuration
-    'AUTO_START_WORKFLOWS': {
-        'myapp.PurchaseRequest': {
-            'workflow_slug': 'purchase_approval',
-            'conditions': {'amount__gte': 1000}  # Only for amounts >= 1000
-        }
-    },
-
-    # Permissions
-    'PERMISSIONS': {
-        'REQUIRE_PERMISSION_TO_START': True,
-        'REQUIRE_PERMISSION_TO_APPROVE': True,
-    }
-}
-```
-
-### Department Model Configuration
-
-The `DEPARTMENT_MODEL` setting allows you to map the department field in workflows to any model in your project:
-
-```python
-# Map to your custom Department model
-'DEPARTMENT_MODEL': 'myapp.Department'
-
-# Map to Django's built-in Group model
-'DEPARTMENT_MODEL': 'auth.Group'
-
-# Map to any other model with a name field
-'DEPARTMENT_MODEL': 'companies.Division'
-```
-
-This provides maximum flexibility for organizing workflows by departments, divisions, teams, or any organizational structure.
-
-### Company Model Architecture
-
-**Important**: The `company` field in workflow models uses Django's `AUTH_USER_MODEL` (User model) for maximum flexibility:
-
-```python
-# Workflow models use User as company for multi-tenant support:
-class WorkFlow(models.Model):
-    company = models.ForeignKey(
-        settings.AUTH_USER_MODEL,  # Uses your User model
-        on_delete=models.SET_NULL,
-        related_name="workflow_company"
-    )
-```
-
-#### Why User Model for Company?
-
-This design supports various multi-tenant architectures:
-
-```python
-# Single Company per User
-user.username = "acme_corp"
-user.email = "admin@acmecorp.com"
-
-# Multi-tenant SaaS where users represent companies
-company_user = User.objects.create(
-    username="company_123",
-    email="admin@company123.com"
-)
-
-# Enterprise where User has company profile
-user.profile.company_name = "Enterprise Corp"
-```
-
-#### Usage Examples
-
-```python
-# Create workflows for specific companies (users)
-workflow = WorkFlow.objects.create(
-    company=company_user,  # User representing the company
-    name_en="Company Workflow"
-)
-
-# Filter workflows by company
-company_workflows = WorkFlow.objects.filter(company=company_user)
-
-# Multi-tenant isolation
-user_workflows = WorkFlow.objects.filter(company=request.user)
-```
-
-This approach provides flexibility for:
-- 🏢 **Multi-tenant SaaS**: Each tenant has a user representing their company
-- 🏛️ **Enterprise**: Companies can be mapped through user profiles or groups
-- 🔒 **Security**: Natural permission boundaries through Django's user system
-- 📊 **Scalability**: Leverage Django's user management and authentication
 
 ## Dependencies
 

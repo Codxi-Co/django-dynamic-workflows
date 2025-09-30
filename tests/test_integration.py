@@ -114,11 +114,12 @@ class TestCompleteWorkflowIntegration:
             is_active=True,
             # Configure approval requirements for this stage
             stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": approver1.id}],
                 "approval_config": {
                     "required_approvals": 1,
                     "approvers": [approver1.id],
                     "role_selection_strategy": RoleSelectionStrategy.CONSENSUS,
-                }
+                },
             },
         )
 
@@ -131,11 +132,12 @@ class TestCompleteWorkflowIntegration:
             order=1,
             is_active=True,
             stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": approver2.id}],
                 "approval_config": {
                     "required_approvals": 1,
                     "approvers": [approver2.id],
                     "role_selection_strategy": RoleSelectionStrategy.CONSENSUS,
-                }
+                },
             },
         )
 
@@ -149,11 +151,12 @@ class TestCompleteWorkflowIntegration:
             order=0,
             is_active=True,
             stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": approver2.id}],
                 "approval_config": {
                     "required_approvals": 1,
                     "approvers": [approver2.id],
                     "role_selection_strategy": RoleSelectionStrategy.CONSENSUS,
-                }
+                },
             },
         )
 
@@ -272,7 +275,7 @@ class TestCompleteWorkflowIntegration:
 
         serializer = WorkflowApprovalSerializer(
             data=approval_data,
-            object_instance=test_object,
+            instance=test_object,
             context={"request": mock_request},
         )
 
@@ -330,7 +333,7 @@ class TestCompleteWorkflowIntegration:
 
         rejection_serializer = WorkflowApprovalSerializer(
             data=rejection_data,
-            object_instance=test_object,
+            instance=test_object,
             context={"request": mock_request},
         )
 
@@ -375,7 +378,7 @@ class TestCompleteWorkflowIntegration:
 
         resubmission_serializer = WorkflowApprovalSerializer(
             data=resubmission_data,
-            object_instance=test_object,
+            instance=test_object,
             context={"request": mock_request},
         )
 
@@ -410,7 +413,7 @@ class TestCompleteWorkflowIntegration:
 
         delegation_serializer = WorkflowApprovalSerializer(
             data=delegation_data,
-            object_instance=test_object,
+            instance=test_object,
             context={"request": mock_request},
         )
 
@@ -460,6 +463,9 @@ class TestCompleteWorkflowIntegration:
             name_ar="مرحلة تجريبية",
             created_by=user,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": user.id}]
+            },
         )
 
         # Create custom action
@@ -577,6 +583,9 @@ class WorkflowConfigurationIntegrationTest(TestCase):
             name_ar="التحقق من المستخدم",
             created_by=self.user,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         # Update workflow active status

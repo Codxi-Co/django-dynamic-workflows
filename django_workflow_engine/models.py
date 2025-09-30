@@ -147,18 +147,25 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
         verbose_name_plural = _("Workflows")
 
     def validate_completeness(self):
-        """Validate if workflow is complete and can be activated."""
-        if not self.pipelines.exists():
+        """Validate if workflow is complete and can be activated.
+
+        Uses select_related/prefetch_related for optimal performance.
+        """
+        # Use prefetch_related to fetch all pipelines and stages in 2 queries
+        pipelines = self.pipelines.prefetch_related("stages").all()
+
+        if not pipelines:
             return False, "Workflow must have at least one pipeline"
 
-        for pipeline in self.pipelines.all():
-            if not pipeline.stages.exists():
+        for pipeline in pipelines:
+            stages = list(pipeline.stages.all())  # Already prefetched
+            if not stages:
                 return (
                     False,
                     f"Pipeline '{pipeline.name_en}' must have at least one stage",
                 )
 
-            for stage in pipeline.stages.all():
+            for stage in stages:
                 if not stage.is_complete():
                     return (
                         False,
@@ -300,20 +307,22 @@ class Stage(CompanyBaseWithNamedModelWithClone):
 
     def is_complete(self):
         """Check if stage is properly configured and complete."""
-        # Basic validation - stage must be active
-        if not self.is_active:
+        # Stage must have stage_info
+        if not self.stage_info or not isinstance(self.stage_info, dict):
             return False
 
-        # If stage_info exists, validate approval configuration
-        if self.stage_info and isinstance(self.stage_info, dict):
-            approvals = self.stage_info.get("approvals", [])
-            if approvals:
-                # Validate each approval configuration
-                for approval in approvals:
-                    if not self._validate_approval_config(approval):
-                        return False
+        # Stage must have at least one approval configured
+        approvals = self.stage_info.get("approvals", [])
+        if not approvals:
+            return False
 
-        return True
+        # Validate each approval configuration
+        for approval in approvals:
+            if not self._validate_approval_config(approval):
+                return False
+
+        # If all validations pass and stage is active, it's complete
+        return self.is_active
 
     def _validate_approval_config(self, approval_config):
         """Validate a single approval configuration."""
@@ -334,9 +343,13 @@ class Stage(CompanyBaseWithNamedModelWithClone):
 
     def save(self, *args, **kwargs):
         """Override save to update workflow active status when stage changes."""
+        # Check if we should skip workflow update (for bulk operations)
+        skip_workflow_update = kwargs.pop("skip_workflow_update", False)
+
         super().save(*args, **kwargs)
-        # Update workflow active status when stage is modified
-        if self.pipeline and self.pipeline.workflow:
+
+        # Update workflow active status when stage is modified (unless skipped)
+        if not skip_workflow_update and self.pipeline and self.pipeline.workflow:
             self.pipeline.workflow.update_active_status()
 
 

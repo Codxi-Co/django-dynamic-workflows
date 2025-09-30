@@ -15,7 +15,9 @@ from rest_framework import serializers
 from .choices import ApprovalTypes
 from .logging_utils import log_serializer_validation, serializers_logger
 from .models import Pipeline, Stage, WorkFlow, WorkflowAttachment
-from .services import get_workflow_attachment
+from .services import create_workflow, get_workflow_attachment
+
+logger = logging.getLogger(__name__)
 
 
 class GenericForeignKeyField(serializers.Field):
@@ -34,15 +36,24 @@ class GenericForeignKeyField(serializers.Field):
         raise serializers.ValidationError("This field is read-only.")
 
 
-logger = logging.getLogger(__name__)
-
-
 class WorkflowApprovalSerializer(serializers.Serializer):
     """
     Generic serializer for approving/rejecting workflow stages.
 
     Handles approve, reject, delegate, and resubmission actions for any object
     attached to a workflow through WorkflowAttachment.
+
+    Usage:
+        serializer = WorkflowApprovalSerializer(
+            instance=my_object,  # The object with attached workflow
+            data={'action': 'approved', 'form_data': {...}},
+            context={'request': request}
+        )
+        if serializer.is_valid():
+            serializer.save()
+
+    Note: The 'instance' parameter is required and represents the object
+    that has the workflow attached to it (not the WorkflowAttachment itself).
     """
 
     action = serializers.ChoiceField(
@@ -69,19 +80,17 @@ class WorkflowApprovalSerializer(serializers.Serializer):
         help_text=_("Stage ID for resubmission (required for resubmission action)"),
     )
 
-    def __init__(self, *args, **kwargs):
-        """Initialize serializer with object instance."""
-        self.object_instance = kwargs.pop("object_instance", None)
-        super().__init__(*args, **kwargs)
-
     def validate_action(self, value):
         """Validate the action is appropriate for current workflow state."""
-        if not self.object_instance:
+        if not self.instance:
             raise serializers.ValidationError(
-                _("Object instance is required for workflow approval")
+                _(
+                    "Object instance is required for workflow approval. "
+                    "Use: WorkflowApprovalSerializer(instance=my_object, data={...})"
+                )
             )
 
-        attachment = get_workflow_attachment(self.object_instance)
+        attachment = get_workflow_attachment(self.instance)
         if not attachment:
             raise serializers.ValidationError(_("No workflow attached to this object"))
 
@@ -93,11 +102,19 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             )
 
         # Check if there are current approval instances
-        current_approval = get_current_approval_for_object(self.object_instance)
+        current_approval = get_current_approval_for_object(self.instance)
         if not current_approval:
             raise serializers.ValidationError(
                 _("No current approval step found for this object")
             )
+
+        # Log validation
+        serializers_logger.log_action(
+            "workflow_approval_validation",
+            approval_action=value,
+            object_type=self.instance._meta.label,
+            object_id=str(self.instance.pk),
+        )
 
         return value
 
@@ -154,7 +171,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
         if stage_id:
             # Validate stage exists and belongs to current workflow
             try:
-                attachment = get_workflow_attachment(self.object_instance)
+                attachment = get_workflow_attachment(self.instance)
                 stage = Stage.objects.get(pk=stage_id)
 
                 # Check if stage belongs to current workflow
@@ -185,9 +202,9 @@ class WorkflowApprovalSerializer(serializers.Serializer):
     def _validate_approval(self, attrs):
         """Validate approval requirements."""
         # Check if current stage requires form data
-        attachment = get_workflow_attachment(self.object_instance)
+        attachment = get_workflow_attachment(self.instance)
         if attachment and attachment.current_stage:
-            current_approval = get_current_approval_for_object(self.object_instance)
+            current_approval = get_current_approval_for_object(self.instance)
 
             # Handle both single instance and list/queryset
             if hasattr(current_approval, "__iter__") and not isinstance(
@@ -207,7 +224,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
 
     def save(self, **kwargs):
         """Process the workflow approval action."""
-        if not self.object_instance:
+        if not self.instance:
             raise ValueError("Object instance is required for workflow approval")
 
         validated_data = self.validated_data
@@ -215,7 +232,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
         user = self.context.get("request").user if self.context.get("request") else None
 
         # Log the approval action attempt
-        attachment = get_workflow_attachment(self.object_instance)
+        attachment = get_workflow_attachment(self.instance)
         serializers_logger.log_approval_action(
             action=action.value if hasattr(action, "value") else str(action),
             workflow_id=attachment.workflow.id if attachment else None,
@@ -225,8 +242,8 @@ class WorkflowApprovalSerializer(serializers.Serializer):
                 else "unknown"
             ),
             user_id=user.id if user else None,
-            object_type=self.object_instance._meta.label,
-            object_id=str(self.object_instance.pk),
+            object_type=self.instance._meta.label,
+            object_id=str(self.instance.pk),
         )
 
         try:
@@ -245,7 +262,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
 
                 # Use approval_workflow's advance_flow to handle the action
                 advance_flow(
-                    instance=self.object_instance,
+                    instance=self.instance,
                     action=action,
                     user=user,
                     comment=validated_data.get("reason", ""),
@@ -257,7 +274,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
                 # Update workflow attachment status if needed
                 self._update_workflow_attachment(action, user)
 
-                return self.object_instance
+                return self.instance
 
         except Exception as e:
             logger.error(f"Error processing workflow approval action: {str(e)}")
@@ -273,7 +290,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             stage = Stage.objects.select_related("pipeline__workflow").get(pk=stage_id)
 
             # Get current approval flow
-            current_approval = get_current_approval_for_object(self.object_instance)
+            current_approval = get_current_approval_for_object(self.instance)
             if hasattr(current_approval, "__iter__") and not isinstance(
                 current_approval, (str, bytes)
             ):
@@ -290,7 +307,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             from .handlers import ApprovalStepBuilder
 
             User = get_user_model()
-            created_by = getattr(self.object_instance, "created_by", None)
+            created_by = getattr(self.instance, "created_by", None)
             if not created_by:
                 # Fallback to request user
                 created_by = (
@@ -333,7 +350,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
 
     def _update_workflow_attachment(self, action, user=None):
         """Update workflow attachment status based on action."""
-        attachment = get_workflow_attachment(self.object_instance)
+        attachment = get_workflow_attachment(self.instance)
         if not attachment:
             return
 
@@ -348,7 +365,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             trigger_workflow_event(
                 attachment,
                 ActionType.AFTER_REJECT,
-                target_object=self.object_instance,
+                target_object=self.instance,
                 stage=attachment.current_stage,
                 user=user,
             )
@@ -628,3 +645,267 @@ class WorkFlowListSerializer(serializers.ModelSerializer):
     def get_company_name(self, obj):
         """Get company name if available."""
         return obj.company.username if obj.company else None
+
+
+class PipelineSerializer(serializers.ModelSerializer):
+    """Serializer for creating/updating Pipeline with auto-generated stages.
+
+    Note: Override fields in your implementation as needed.
+    created_by is automatically set from request context.
+    """
+
+    number_of_stages = serializers.IntegerField(
+        write_only=True,
+        required=False,
+        min_value=1,
+        help_text=_("Number of stages to auto-create for this pipeline"),
+    )
+
+    class Meta:
+        model = Pipeline
+        fields = "__all__"
+        read_only_fields = [
+            "id",
+            "created_by",
+            "modified_by",
+            "created_at",
+            "modified_at",
+            "workflow",
+        ]
+        extra_kwargs = {
+            "company": {"required": False},
+            "workflow": {"required": False},  # Set by parent WorkFlowSerializer
+        }
+
+    def create(self, validated_data):
+        """Create pipeline with auto-generated stages."""
+        number_of_stages = validated_data.pop("number_of_stages", 0)
+        pipeline = Pipeline.objects.create(**validated_data)
+
+        # Auto-create stages if number_of_stages is provided
+        if number_of_stages > 0:
+            for i in range(1, number_of_stages + 1):
+                Stage.objects.create(
+                    pipeline=pipeline,
+                    name_en=f"Stage {i}",
+                    name_ar=f"المرحلة {i}",
+                    order=i,
+                    stage_info={"approvals": [], "color": "#3498db"},
+                )
+
+        return pipeline
+
+
+class WorkFlowSerializer(serializers.ModelSerializer):
+    """Serializer for creating/updating WorkFlow with nested pipelines.
+
+    Note: Override fields in your implementation as needed.
+    created_by is automatically set from request context.
+    company is automatically set from context if not provided.
+    """
+
+    pipelines = PipelineSerializer(many=True, required=False)
+
+    class Meta:
+        model = WorkFlow
+        fields = "__all__"
+        read_only_fields = [
+            "id",
+            "created_by",
+            "modified_by",
+            "created_at",
+            "modified_at",
+            "is_active",
+        ]
+        extra_kwargs = {
+            "company": {"required": False},
+        }
+
+    def create(self, validated_data):
+        """Create workflow with nested pipelines and stages using service function."""
+        pipelines_data = validated_data.pop("pipelines", [])
+
+        # Get company from context if not provided
+        company = validated_data.pop("company", None)
+        if not company:
+            company = self.context.get("company_user")
+
+        # Get created_by from request
+        request = self.context.get("request")
+        created_by = request.user if request else company
+
+        # Get other workflow fields
+        name_en = validated_data.pop("name_en")
+        name_ar = validated_data.pop("name_ar", name_en)
+        description = validated_data.pop("description", "")
+        is_active = validated_data.pop("is_active", True)
+
+        # Use the existing create_workflow service function
+        workflow = create_workflow(
+            company=company,
+            name_en=name_en,
+            name_ar=name_ar,
+            created_by=created_by,
+            pipelines_data=pipelines_data,
+        )
+
+        # Update additional fields if provided
+        if description:
+            workflow.description = description
+        if is_active is not None:
+            workflow.is_active = is_active
+        workflow.save()
+
+        return workflow
+
+    def to_representation(self, instance):
+        """Return detailed representation after creation."""
+        return {
+            "id": instance.id,
+            "name_en": instance.name_en,
+            "name_ar": instance.name_ar,
+            "company": instance.company_id,
+            "is_active": instance.is_active,
+            "description": instance.description,
+            "pipelines_count": instance.pipelines.count(),
+            "total_stages_count": sum(
+                pipeline.stages.count() for pipeline in instance.pipelines.all()
+            ),
+        }
+
+
+class StageSerializer(serializers.ModelSerializer):
+    """Serializer for updating Stage configurations including approvals.
+
+    Note: Override fields in your implementation as needed.
+    is_active is auto-managed based on approval configuration.
+    """
+
+    stage_info = serializers.JSONField(required=False)
+
+    class Meta:
+        model = Stage
+        fields = "__all__"
+        read_only_fields = [
+            "id",
+            "created_by",
+            "modified_by",
+            "created_at",
+            "modified_at",
+            "is_active",
+            "pipeline",
+        ]
+        extra_kwargs = {
+            "company": {"required": False},
+            "pipeline": {"required": False},  # Set by parent PipelineSerializer
+        }
+
+    def validate_stage_info(self, value):
+        """Validate stage_info structure."""
+        if not isinstance(value, dict):
+            raise serializers.ValidationError("stage_info must be a dictionary")
+
+        # Validate approvals structure if present
+        approvals = value.get("approvals", [])
+        if not isinstance(approvals, list):
+            raise serializers.ValidationError("approvals must be a list")
+
+        # Normalize approval_type to lowercase for case-insensitive comparison
+        valid_approval_types = [
+            ApprovalTypes.ROLE.lower(),
+            ApprovalTypes.USER.lower(),
+            ApprovalTypes.SELF.lower(),
+        ]
+
+        for approval in approvals:
+            if not isinstance(approval, dict):
+                raise serializers.ValidationError("Each approval must be a dictionary")
+
+            approval_type = approval.get("approval_type", "").lower()
+
+            # Normalize to lowercase in the data
+            if approval_type:
+                approval["approval_type"] = approval_type
+
+            if approval_type not in valid_approval_types:
+                raise serializers.ValidationError(
+                    f"Invalid approval_type: {approval.get('approval_type')}. "
+                    f"Must be one of: role, user, self (case-insensitive)"
+                )
+
+            # Validate role-based approval
+            if approval_type == ApprovalTypes.ROLE.lower():
+                if "user_role" not in approval:
+                    raise serializers.ValidationError(
+                        "user_role is required for ROLE approval type"
+                    )
+                strategy = approval.get("role_selection_strategy", "").lower()
+
+                # Normalize strategy to lowercase
+                if strategy:
+                    approval["role_selection_strategy"] = strategy
+
+                # Valid strategies from approval_workflow
+                valid_strategies = [
+                    "anyone",
+                    "consensus",
+                    "round_robin",
+                    "random",
+                    "supervisor",
+                ]
+                if strategy and strategy not in valid_strategies:
+                    raise serializers.ValidationError(
+                        f"Invalid strategy: {approval.get('role_selection_strategy')}. "
+                        f"Must be one of: {', '.join(valid_strategies)} (case-insensitive)"
+                    )
+
+            # Validate user-based approval
+            elif approval_type == ApprovalTypes.USER.lower():
+                if "approval_user" not in approval:
+                    raise serializers.ValidationError(
+                        "approval_user is required for USER approval type"
+                    )
+
+        return value
+
+    def update(self, instance, validated_data):
+        """Update stage with new configuration and auto-activate/deactivate."""
+        stage_info = validated_data.get("stage_info")
+        old_is_active = instance.is_active
+
+        if stage_info:
+            # Merge with existing stage_info
+            existing_info = instance.stage_info or {}
+            existing_info.update(stage_info)
+            validated_data["stage_info"] = existing_info
+
+            # Auto-activate/deactivate based on approvals
+            approvals = existing_info.get("approvals", [])
+            if approvals:
+                # Has approvals - activate if not already active
+                if not old_is_active:
+                    validated_data["is_active"] = True
+                    serializers_logger.log_action(
+                        "stage_auto_activated",
+                        stage_id=instance.id,
+                        stage_name=instance.name_en,
+                        reason="approvals_configured",
+                    )
+            else:
+                # No approvals - deactivate if currently active
+                if old_is_active:
+                    validated_data["is_active"] = False
+                    serializers_logger.log_action(
+                        "stage_auto_deactivated",
+                        stage_id=instance.id,
+                        stage_name=instance.name_en,
+                        reason="no_approvals_configured",
+                    )
+
+        updated_instance = super().update(instance, validated_data)
+
+        # Trigger workflow status update
+        if updated_instance.pipeline and updated_instance.pipeline.workflow:
+            updated_instance.pipeline.workflow.update_active_status()
+
+        return updated_instance

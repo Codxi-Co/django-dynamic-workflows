@@ -63,6 +63,9 @@ class WorkflowApprovalSerializerTest(TestCase):
             created_by=self.user,
             order=0,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         self.stage2 = Stage.objects.create(
@@ -73,6 +76,9 @@ class WorkflowApprovalSerializerTest(TestCase):
             created_by=self.user,
             order=1,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         # Create workflow attachment
@@ -118,7 +124,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         self.assertTrue(serializer.is_valid())
@@ -135,7 +141,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         self.assertTrue(serializer.is_valid())
@@ -155,7 +161,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         self.assertTrue(serializer.is_valid())
@@ -177,7 +183,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         self.assertTrue(serializer.is_valid())
@@ -191,7 +197,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         self.assertFalse(serializer.is_valid())
@@ -205,7 +211,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         # Should still be valid - stage_id is optional
@@ -219,7 +225,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         # Should still be valid - user_id is optional
@@ -237,7 +243,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         self.assertTrue(serializer.is_valid())
@@ -273,7 +279,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         self.assertTrue(serializer.is_valid())
@@ -303,7 +309,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={}
+            data=data, instance=self.user, context={}
         )
 
         # Should still validate data structure
@@ -317,7 +323,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         self.assertTrue(serializer.is_valid())
@@ -335,7 +341,7 @@ class WorkflowApprovalSerializerTest(TestCase):
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=self.user, context={"request": self.mock_request}
+            data=data, instance=self.user, context={"request": self.mock_request}
         )
 
         self.assertTrue(serializer.is_valid())
@@ -390,6 +396,9 @@ class TestSerializerIntegrationWithApprovalWorkflow:
             name_ar="مرحلة المراجعة",
             created_by=user,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": user.id}]
+            },
         )
 
         # Create workflow attachment
@@ -435,7 +444,7 @@ class TestSerializerIntegrationWithApprovalWorkflow:
         }
 
         serializer = WorkflowApprovalSerializer(
-            data=data, object_instance=user, context={"request": mock_request}
+            data=data, instance=user, context={"request": mock_request}
         )
 
         assert serializer.is_valid()
@@ -489,7 +498,7 @@ class TestSerializerIntegrationWithApprovalWorkflow:
 
                     serializer = WorkflowApprovalSerializer(
                         data=data,
-                        object_instance=user,
+                        instance=user,
                         context={"request": mock_request},
                     )
 
@@ -514,7 +523,7 @@ class TestSerializerIntegrationWithApprovalWorkflow:
                 }
 
                 serializer = WorkflowApprovalSerializer(
-                    data=data, object_instance=user, context={"request": mock_request}
+                    data=data, instance=user, context={"request": mock_request}
                 )
 
                 # Should fail validation for non-in-progress workflows

@@ -182,7 +182,7 @@ class CompleteWorkflowFlowTest(TestCase):
 
         serializer = WorkflowApprovalSerializer(
             data=rejection_data,
-            object_instance=self.purchase_request,
+            instance=self.purchase_request,
             context={"request": request},
         )
 
@@ -235,7 +235,7 @@ class CompleteWorkflowFlowTest(TestCase):
 
         serializer = WorkflowApprovalSerializer(
             data=resubmission_data,
-            object_instance=self.purchase_request,
+            instance=self.purchase_request,
             context={"request": request},
         )
 
@@ -281,7 +281,7 @@ class CompleteWorkflowFlowTest(TestCase):
 
         serializer = WorkflowApprovalSerializer(
             data=delegation_data,
-            object_instance=self.purchase_request,
+            instance=self.purchase_request,
             context={"request": request},
         )
 
@@ -326,7 +326,7 @@ class CompleteWorkflowFlowTest(TestCase):
 
         serializer = WorkflowApprovalSerializer(
             data=approval_data,
-            object_instance=self.purchase_request,
+            instance=self.purchase_request,
             context={"request": request},
         )
 
@@ -382,7 +382,7 @@ class CompleteWorkflowFlowTest(TestCase):
 
         serializer = WorkflowApprovalSerializer(
             data=resubmission_data,
-            object_instance=self.purchase_request,
+            instance=self.purchase_request,
             context={"request": request},
         )
 
@@ -452,7 +452,7 @@ class CompleteWorkflowFlowTest(TestCase):
 
         serializer = WorkflowApprovalSerializer(
             data=delegation_data,
-            object_instance=self.purchase_request,
+            instance=self.purchase_request,
             context={"request": request},
         )
 

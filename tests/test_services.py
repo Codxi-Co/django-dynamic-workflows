@@ -86,6 +86,9 @@ class WorkflowServicesTest(TestCase):
             created_by=self.user,
             order=0,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         self.stage2 = Stage.objects.create(
@@ -96,6 +99,9 @@ class WorkflowServicesTest(TestCase):
             created_by=self.user,
             order=1,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         # Update workflow active status
@@ -304,6 +310,9 @@ class WorkflowActionServicesTest(TestCase):
             created_by=self.user,
             order=0,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
         )
 
         # Create workflow attachment
@@ -445,6 +454,9 @@ class TestApprovalWorkflowIntegration:
             name_ar="مرحلة تجريبية",
             created_by=user,
             is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": user.id}]
+            },
         )
 
         # Create workflow attachment
@@ -530,6 +542,9 @@ class TestApprovalWorkflowIntegration:
             name_ar="مرحلة تجريبية",
             is_active=True,
             created_by=user,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": user.id}]
+            },
         )
 
         # Update workflow active status
@@ -567,7 +582,7 @@ class TestApprovalWorkflowIntegration:
                 "action": ApprovalStatus.APPROVED,
                 "form_data": {"comment": "Approved"},
             },
-            object_instance=user,
+            instance=user,
             context={"request": type("Request", (), {"user": user})()},
         )
 
@@ -581,7 +596,7 @@ class TestApprovalWorkflowIntegration:
                 "action": ApprovalStatus.REJECTED,
                 "reason": "Not approved",
             },
-            object_instance=user,
+            instance=user,
             context={"request": type("Request", (), {"user": user})()},
         )
 
