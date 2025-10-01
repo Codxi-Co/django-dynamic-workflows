@@ -5,6 +5,33 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.9] - 2025-10-01
+
+### 🐛 Bug Fixes
+- **Fixed department_generic_fk setting**: `create_pipeline` now correctly sets department generic foreign key
+  - Fixed `set_pipeline_department` to use lowercase model name for ContentType lookup
+  - ContentType model field is always stored in lowercase in Django
+  - Previously failed silently when department_id was provided
+
+### ⚙️ Configuration
+- **Added DJANGO_WORKFLOW_ENGINE settings**: Proper configuration support for department model mapping
+  - Added `DEPARTMENT_MODEL` setting in sandbox/settings.py for testing
+  - Ensures department mapping works correctly across different environments
+
+### ✅ Testing
+- **Added comprehensive test coverage for pipeline department functionality**:
+  - `test_create_pipeline_with_department`: Verifies department_generic_fk is set correctly when department_id is provided
+  - `test_create_pipeline_without_department`: Ensures pipeline creation works without department_id
+  - `test_set_pipeline_department`: Validates set_pipeline_department function directly
+- **All 18 service tests passing**: Complete test coverage for department-related functionality
+
+### 📋 Technical Details
+- **Backward compatible**: No breaking changes to existing API
+- **Bug fix only**: Resolves issue where department was not being set when using create_pipeline service
+- **Better error handling**: Silent failures now properly addressed with correct ContentType lookup
+
+---
+
 ## [1.0.8] - 2025-09-30
 
 ### 🎯 ApprovalTypes Enhancements

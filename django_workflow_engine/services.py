@@ -60,7 +60,10 @@ def set_pipeline_department(pipeline: Pipeline, department_id: int):
         # Get the content type
         from django.contrib.contenttypes.models import ContentType
 
-        content_type = ContentType.objects.get(app_label=app_label, model=model_name)
+        # ContentType.model is always lowercase
+        content_type = ContentType.objects.get(
+            app_label=app_label, model=model_name.lower()
+        )
 
         # Set the generic foreign key fields
         pipeline.department_content_type = content_type

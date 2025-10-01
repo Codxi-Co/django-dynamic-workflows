@@ -27,6 +27,7 @@ from django_workflow_engine.models import (
 from django_workflow_engine.services import (
     attach_workflow_to_object,
     complete_workflow,
+    create_pipeline,
     execute_action_function,
     get_actions_for_event,
     get_workflow_attachment,
@@ -34,6 +35,7 @@ from django_workflow_engine.services import (
     move_to_next_stage,
     register_model_for_workflow,
     reject_workflow_stage,
+    set_pipeline_department,
     start_workflow_for_object,
     trigger_workflow_event,
 )
@@ -264,6 +266,87 @@ class WorkflowServicesTest(TestCase):
 
         # Should be enabled
         self.assertTrue(is_model_workflow_enabled(User))
+
+    def test_create_pipeline_with_department(self):
+        """Test creating pipeline with department_id sets department_generic_fk."""
+        pipeline_data = {
+            "name_en": "Test Pipeline with Department",
+            "name_ar": "خط أنابيب مع القسم",
+            "department_id": self.department.id,
+            "number_of_stages": 2,
+        }
+
+        pipeline = create_pipeline(
+            workflow=self.workflow,
+            pipeline_data=pipeline_data,
+            created_by=self.user,
+        )
+
+        # Verify pipeline was created
+        self.assertIsNotNone(pipeline)
+        self.assertEqual(pipeline.name_en, "Test Pipeline with Department")
+
+        # Verify department generic foreign key is set
+        self.assertIsNotNone(pipeline.department_content_type)
+        self.assertIsNotNone(pipeline.department_id)
+        self.assertEqual(pipeline.department_id, self.department.id)
+
+        # Verify department property works
+        self.assertEqual(pipeline.department, self.department)
+        self.assertEqual(pipeline.department_name, self.department.name)
+
+        # Verify stages were created
+        self.assertEqual(pipeline.stages.count(), 2)
+
+    def test_create_pipeline_without_department(self):
+        """Test creating pipeline without department_id doesn't set department_generic_fk."""
+        pipeline_data = {
+            "name_en": "Test Pipeline without Department",
+            "name_ar": "خط أنابيب بدون القسم",
+            "number_of_stages": 1,
+        }
+
+        pipeline = create_pipeline(
+            workflow=self.workflow,
+            pipeline_data=pipeline_data,
+            created_by=self.user,
+        )
+
+        # Verify pipeline was created
+        self.assertIsNotNone(pipeline)
+
+        # Verify department generic foreign key is not set
+        self.assertIsNone(pipeline.department_content_type)
+        self.assertIsNone(pipeline.department_id)
+        self.assertIsNone(pipeline.department)
+
+    def test_set_pipeline_department(self):
+        """Test set_pipeline_department function sets department_generic_fk correctly."""
+        # Create a pipeline without department
+        pipeline = Pipeline.objects.create(
+            workflow=self.workflow,
+            company=self.company_user,
+            name_en="Test Pipeline",
+            name_ar="خط أنابيب",
+            created_by=self.user,
+            order=5,
+        )
+
+        # Initially no department
+        self.assertIsNone(pipeline.department)
+
+        # Set department using the service function
+        set_pipeline_department(pipeline, self.department.id)
+        pipeline.save()
+
+        # Reload from database
+        pipeline.refresh_from_db()
+
+        # Verify department is set
+        self.assertIsNotNone(pipeline.department_content_type)
+        self.assertIsNotNone(pipeline.department_id)
+        self.assertEqual(pipeline.department_id, self.department.id)
+        self.assertEqual(pipeline.department, self.department)
 
 
 class WorkflowActionServicesTest(TestCase):
