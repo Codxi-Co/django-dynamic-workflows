@@ -5,6 +5,55 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2025-10-01
+
+### 🐛 Critical Bug Fixes
+- **Fixed build_approval_steps conflict**: Resolved "cannot have both 'assigned_to' and 'assigned_role'" error
+  - Removed initialization of `assigned_to` and `role_selection_strategy` in base step dictionary
+  - Now only relevant keys are added based on approval type (user-based OR role-based)
+  - Prevents approval workflow package from rejecting steps with conflicting keys
+  - This was causing workflow start failures for role-based approvals
+
+### 🎯 Code Quality Improvements
+- **Replaced all hardcoded strings with enum constants**:
+  - `ApprovalTypes.ROLE`, `ApprovalTypes.USER`, `ApprovalTypes.SELF` instead of strings
+  - `RoleSelectionStrategy.ROUND_ROBIN`, `RoleSelectionStrategy.ANYONE`, `RoleSelectionStrategy.CONSENSUS` instead of strings
+  - Updated README examples to use enum constants
+  - Updated all test files to use enum constants
+  - Better type safety and IDE support
+
+### ⚙️ Dynamic Validation
+- **Validation now uses enum choices dynamically**:
+  - `valid_approval_types` generated from `ApprovalTypes.choices`
+  - `valid_strategies` generated from `RoleSelectionStrategy.choices`
+  - Automatically stays in sync with enum definitions
+  - Removed hardcoded validation lists
+
+### 📚 Documentation Enhancements
+- **Added comprehensive Approval Package setup guide in README**:
+  - Step-by-step model configuration instructions
+  - Three implementation options (Django Group, Custom Role, Dynamic Forms)
+  - Complete settings examples with best practices
+  - Proper placement in Quick Start guide for better discoverability
+
+### ✅ Testing
+- **Added 3 new test cases for build_approval_steps**:
+  - `test_build_approval_steps_role_based_no_assigned_to_conflict`: Verifies role-based approvals don't have `assigned_to`
+  - `test_build_approval_steps_user_based_no_role_conflict`: Verifies user-based approvals don't have `assigned_role`
+  - `test_build_approval_steps_mixed_approvals_no_conflicts`: Verifies mixed approval types work correctly
+- **Updated stage configuration examples in README**:
+  - Added `name_en`, `name_ar`, `pipeline_id` as stage-level fields
+  - Clarified distinction between Stage model fields and `stage_info` JSON configuration
+- **All 150 tests passing**: Full test coverage maintained
+
+### 📋 Technical Details
+- **Backward compatible**: No breaking changes to existing API
+- **Bug fix priority**: Resolves critical workflow start failures
+- **Best practices**: Following Django/Python enum patterns throughout
+- **Improved maintainability**: Code is more maintainable with enum constants
+
+---
+
 ## [1.0.9] - 2025-10-01
 
 ### 🐛 Bug Fixes

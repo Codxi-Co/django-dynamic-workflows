@@ -156,7 +156,125 @@ INSTALLED_APPS = [
 python manage.py migrate
 ```
 
-3. Register a model for workflow support:
+3. Configure Approval Package Models:
+
+Django Dynamic Workflows is built on top of the `django-approval-workflow` package. You need to configure two essential models for the approval system to work:
+
+#### Required Settings
+
+```python
+# settings.py
+
+# Role Model - for role-based approvals
+# This model represents user roles (e.g., Manager, Director, CEO)
+APPROVAL_ROLE_MODEL = 'myapp.Role'  # or 'auth.Group' to use Django's built-in Group model
+
+# Dynamic Form Model - for approval forms (optional)
+# This model represents dynamic forms that can be attached to approval steps
+APPROVAL_DYNAMIC_FORM_MODEL = 'myapp.DynamicForm'  # Optional: for form-based approvals
+```
+
+#### Option 1: Use Django's Built-in Group Model (Simplest)
+
+The easiest way is to use Django's built-in `Group` model for roles:
+
+```python
+# settings.py
+APPROVAL_ROLE_MODEL = 'auth.Group'
+```
+
+Then create groups in Django admin or programmatically:
+
+```python
+from django.contrib.auth.models import Group
+
+# Create roles as groups
+finance_role = Group.objects.create(name='Finance Manager')
+executive_role = Group.objects.create(name='Executive')
+
+# Assign users to roles
+user.groups.add(finance_role)
+```
+
+#### Option 2: Create a Custom Role Model
+
+For more control, create a custom Role model:
+
+```python
+# myapp/models.py
+from django.db import models
+from django.contrib.auth import get_user_model
+
+User = get_user_model()
+
+class Role(models.Model):
+    """Custom role model for approval workflows."""
+    name = models.CharField(max_length=100, unique=True)
+    description = models.TextField(blank=True)
+    users = models.ManyToManyField(User, related_name='approval_roles')
+
+    class Meta:
+        db_table = 'approval_roles'
+
+    def __str__(self):
+        return self.name
+```
+
+Then configure it in settings:
+
+```python
+# settings.py
+APPROVAL_ROLE_MODEL = 'myapp.Role'
+```
+
+#### Option 3: Dynamic Form Model (Optional)
+
+If you want to attach forms to approval steps, create a DynamicForm model:
+
+```python
+# myapp/models.py
+class DynamicForm(models.Model):
+    """Dynamic form that can be attached to approval steps."""
+    name = models.CharField(max_length=200)
+    description = models.TextField(blank=True)
+    form_schema = models.JSONField()  # Store form fields as JSON
+
+    def __str__(self):
+        return self.name
+```
+
+Configure it:
+
+```python
+# settings.py
+APPROVAL_DYNAMIC_FORM_MODEL = 'myapp.DynamicForm'
+```
+
+#### Complete Settings Example
+
+```python
+# settings.py
+INSTALLED_APPS = [
+    ...
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'approval_workflow',
+    'django_workflow_engine',
+    'myapp',
+    ...
+]
+
+# Approval Package Configuration
+APPROVAL_ROLE_MODEL = 'auth.Group'  # Using Django's built-in Group model
+# APPROVAL_DYNAMIC_FORM_MODEL = 'myapp.DynamicForm'  # Optional
+
+# Django Workflow Engine Configuration
+DJANGO_WORKFLOW_ENGINE = {
+    'DEPARTMENT_MODEL': 'myapp.Department',
+}
+```
+
+4. Register a model for workflow support:
 
 ```python
 from django_workflow_engine.services import register_model_for_workflow
@@ -410,6 +528,8 @@ if workflow_serializer.is_valid():
 # 2. Configure Stage Approvals and Forms
 # Now configure each stage with approval requirements, roles, and forms
 from django_workflow_engine.serializers import StageSerializer
+from django_workflow_engine.choices import ApprovalTypes
+from approval_workflow.choices import RoleSelectionStrategy
 
 # Get the auto-created stages
 finance_pipeline = purchase_workflow.pipelines.get(name_en='Finance Review')
@@ -418,13 +538,16 @@ executive_pipeline = purchase_workflow.pipelines.get(name_en='Executive Approval
 # Configure Finance Stage 1: Initial Review
 initial_review = finance_pipeline.stages.get(order=1)
 stage_config = {
+    'name_en': 'Initial Review',
+    'name_ar': 'المراجعة الأولية',
+    'pipeline_id': finance_pipeline.id,
     'stage_info': {
         'color': '#3498db',
         'approvals': [
             {
-                'approval_type': 'role',  # Role-based approval (lowercase)
+                'approval_type': ApprovalTypes.ROLE,
                 'user_role': 1,  # Finance Reviewer Role ID
-                'role_selection_strategy': 'random',  # Lowercase (also supports 'anyone', 'consensus', 'round_robin', 'supervisor')
+                'role_selection_strategy': RoleSelectionStrategy.ROUND_ROBIN,
                 'required_form': 1  # Initial Review Form ID
             }
         ]
@@ -438,13 +561,16 @@ if stage_serializer.is_valid():
 # Configure Finance Stage 2: Budget Approval
 budget_approval = finance_pipeline.stages.get(order=2)
 stage_config = {
+    'name_en': 'Budget Approval',
+    'name_ar': 'موافقة الميزانية',
+    'pipeline_id': finance_pipeline.id,
     'stage_info': {
         'color': '#f39c12',
         'approvals': [
             {
-                'approval_type': 'role',  # Lowercase
+                'approval_type': ApprovalTypes.ROLE,
                 'user_role': 2,  # Budget Manager Role ID
-                'role_selection_strategy': 'anyone',
+                'role_selection_strategy': RoleSelectionStrategy.ANYONE,
                 'required_form': 2  # Budget Approval Form ID
             }
         ]
@@ -458,11 +584,14 @@ if stage_serializer.is_valid():
 # Configure Finance Stage 3: Final Finance Sign-off
 finance_signoff = finance_pipeline.stages.get(order=3)
 stage_config = {
+    'name_en': 'Final Finance Sign-off',
+    'name_ar': 'الموافقة المالية النهائية',
+    'pipeline_id': finance_pipeline.id,
     'stage_info': {
         'color': '#27ae60',
         'approvals': [
             {
-                'approval_type': 'user',  # Specific user approval (lowercase)
+                'approval_type': ApprovalTypes.USER,
                 'approval_user': 123,  # CFO User ID
                 'required_form': 3  # Final Approval Form ID
             }
@@ -477,13 +606,16 @@ if stage_serializer.is_valid():
 # Configure Executive Stage: Executive Approval
 executive_approval = executive_pipeline.stages.get(order=1)
 stage_config = {
+    'name_en': 'Executive Approval',
+    'name_ar': 'موافقة تنفيذية',
+    'pipeline_id': executive_pipeline.id,
     'stage_info': {
         'color': '#8e44ad',
         'approvals': [
             {
-                'approval_type': 'role',  # Lowercase
+                'approval_type': ApprovalTypes.ROLE,
                 'user_role': 3,  # Executive Role ID
-                'role_selection_strategy': 'supervisor'  # Lowercase
+                'role_selection_strategy': RoleSelectionStrategy.CONSENSUS
                 # No required_form - executives can approve without additional forms
             }
         ]

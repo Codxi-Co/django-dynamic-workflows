@@ -39,6 +39,7 @@ from django_workflow_engine.services import (
     start_workflow_for_object,
     trigger_workflow_event,
 )
+from django_workflow_engine.utils import build_approval_steps
 from sandbox.testapp.models import Company, Department
 
 User = get_user_model()
@@ -347,6 +348,179 @@ class WorkflowServicesTest(TestCase):
         self.assertIsNotNone(pipeline.department_id)
         self.assertEqual(pipeline.department_id, self.department.id)
         self.assertEqual(pipeline.department, self.department)
+
+    def test_build_approval_steps_role_based_no_assigned_to_conflict(self):
+        """Test that build_approval_steps doesn't create both assigned_to and assigned_role for role-based approvals."""
+        # Create a mock role model
+        from django.contrib.auth.models import Group
+
+        from approval_workflow.choices import RoleSelectionStrategy
+
+        from django_workflow_engine.choices import ApprovalTypes
+
+        role = Group.objects.create(name="Test Role")
+
+        # Create a stage with role-based approval
+        stage = Stage.objects.create(
+            pipeline=self.pipeline,
+            name_en="Role Approval Stage",
+            name_ar="مرحلة الموافقة على الدور",
+            order=3,
+            is_active=True,
+            stage_info={
+                "approvals": [
+                    {
+                        "approval_type": ApprovalTypes.ROLE,
+                        "user_role": role.id,
+                        "role_selection_strategy": RoleSelectionStrategy.ANYONE,
+                    }
+                ]
+            },
+        )
+
+        # Build approval steps
+        with self.settings(APPROVAL_ROLE_MODEL="auth.Group"):
+            steps = build_approval_steps(stage, self.user)
+
+        # Verify we have steps
+        self.assertEqual(len(steps), 1)
+        step = steps[0]
+
+        # Critical assertion: role-based approval should NOT have assigned_to
+        self.assertNotIn(
+            "assigned_to",
+            step,
+            "Role-based approval step should not have 'assigned_to' key",
+        )
+
+        # Should have assigned_role
+        self.assertIn(
+            "assigned_role",
+            step,
+            "Role-based approval step should have 'assigned_role' key",
+        )
+        self.assertEqual(step["assigned_role"], role)
+
+        # Should have role_selection_strategy
+        self.assertIn("role_selection_strategy", step)
+        self.assertEqual(step["role_selection_strategy"], RoleSelectionStrategy.ANYONE)
+
+    def test_build_approval_steps_user_based_no_role_conflict(self):
+        """Test that build_approval_steps doesn't create assigned_role for user-based approvals."""
+        from django_workflow_engine.choices import ApprovalTypes
+
+        # Create a stage with user-based approval
+        stage = Stage.objects.create(
+            pipeline=self.pipeline,
+            name_en="User Approval Stage",
+            name_ar="مرحلة موافقة المستخدم",
+            order=4,
+            is_active=True,
+            stage_info={
+                "approvals": [
+                    {
+                        "approval_type": ApprovalTypes.USER,
+                        "approval_user": self.user.id,
+                    }
+                ]
+            },
+        )
+
+        # Build approval steps
+        steps = build_approval_steps(stage, self.user)
+
+        # Verify we have steps
+        self.assertEqual(len(steps), 1)
+        step = steps[0]
+
+        # Critical assertion: user-based approval should NOT have assigned_role
+        self.assertNotIn(
+            "assigned_role",
+            step,
+            "User-based approval step should not have 'assigned_role' key",
+        )
+
+        # Should have assigned_to
+        self.assertIn(
+            "assigned_to",
+            step,
+            "User-based approval step should have 'assigned_to' key",
+        )
+        self.assertEqual(step["assigned_to"], self.user.id)
+
+        # Should NOT have role_selection_strategy for user-based approval
+        self.assertNotIn(
+            "role_selection_strategy",
+            step,
+            "User-based approval step should not have 'role_selection_strategy' key",
+        )
+
+    def test_build_approval_steps_mixed_approvals_no_conflicts(self):
+        """Test that build_approval_steps handles mixed approval types correctly."""
+        from django.contrib.auth.models import Group
+
+        from approval_workflow.choices import RoleSelectionStrategy
+
+        from django_workflow_engine.choices import ApprovalTypes
+
+        role = Group.objects.create(name="Test Role 2")
+        another_user = User.objects.create_user(
+            username="approver", email="approver@test.com", password="testpass123"
+        )
+
+        # Create a stage with mixed approval types
+        stage = Stage.objects.create(
+            pipeline=self.pipeline,
+            name_en="Mixed Approval Stage",
+            name_ar="مرحلة موافقة مختلطة",
+            order=5,
+            is_active=True,
+            stage_info={
+                "approvals": [
+                    {
+                        "approval_type": ApprovalTypes.ROLE,
+                        "user_role": role.id,
+                        "role_selection_strategy": RoleSelectionStrategy.CONSENSUS,
+                    },
+                    {
+                        "approval_type": ApprovalTypes.USER,
+                        "approval_user": another_user.id,
+                    },
+                    {
+                        "approval_type": ApprovalTypes.SELF,
+                        "approval_user": self.user.id,
+                    },
+                ]
+            },
+        )
+
+        # Build approval steps
+        with self.settings(APPROVAL_ROLE_MODEL="auth.Group"):
+            steps = build_approval_steps(stage, self.user)
+
+        # Verify we have 3 steps
+        self.assertEqual(len(steps), 3)
+
+        # Step 1: Role-based - should have assigned_role, NOT assigned_to
+        step1 = steps[0]
+        self.assertNotIn("assigned_to", step1)
+        self.assertIn("assigned_role", step1)
+        self.assertEqual(step1["assigned_role"], role)
+        self.assertEqual(
+            step1["role_selection_strategy"], RoleSelectionStrategy.CONSENSUS
+        )
+
+        # Step 2: User-based - should have assigned_to, NOT assigned_role
+        step2 = steps[1]
+        self.assertIn("assigned_to", step2)
+        self.assertNotIn("assigned_role", step2)
+        self.assertEqual(step2["assigned_to"], another_user.id)
+
+        # Step 3: Self-approval - should have assigned_to, NOT assigned_role
+        step3 = steps[2]
+        self.assertIn("assigned_to", step3)
+        self.assertNotIn("assigned_role", step3)
+        self.assertEqual(step3["assigned_to"], self.user.id)
 
 
 class WorkflowActionServicesTest(TestCase):

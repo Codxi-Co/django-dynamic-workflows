@@ -7,8 +7,10 @@ These tests verify that the code examples shown in the README.md file work corre
 from django.contrib.auth import get_user_model
 
 import pytest
+from approval_workflow.choices import RoleSelectionStrategy
 from rest_framework.test import APIRequestFactory
 
+from django_workflow_engine.choices import ApprovalTypes
 from django_workflow_engine.models import Pipeline, Stage, WorkFlow
 from django_workflow_engine.serializers import StageSerializer, WorkFlowSerializer
 
@@ -215,9 +217,9 @@ class TestStageSerializerReadmeExample:
                 "color": "#3498db",
                 "approvals": [
                     {
-                        "approval_type": "ROLE",  # Role-based approval
+                        "approval_type": ApprovalTypes.ROLE,
                         "user_role": 1,  # Finance Reviewer Role ID
-                        "role_selection_strategy": "RANDOM",
+                        "role_selection_strategy": RoleSelectionStrategy.ROUND_ROBIN,
                         "required_form": 1,  # Initial Review Form ID
                     }
                 ],
@@ -239,11 +241,9 @@ class TestStageSerializerReadmeExample:
         assert len(updated_stage.stage_info["approvals"]) == 1
 
         approval = updated_stage.stage_info["approvals"][0]
-        assert approval["approval_type"] == "role"  # Normalized to lowercase
+        assert approval["approval_type"] == ApprovalTypes.ROLE
         assert approval["user_role"] == 1
-        assert (
-            approval["role_selection_strategy"] == "random"
-        )  # Normalized to lowercase
+        assert approval["role_selection_strategy"] == RoleSelectionStrategy.ROUND_ROBIN
         assert approval["required_form"] == 1
 
     def test_configure_multiple_stages_readme_pattern(
@@ -283,9 +283,9 @@ class TestStageSerializerReadmeExample:
                 "color": "#3498db",
                 "approvals": [
                     {
-                        "approval_type": "ROLE",
+                        "approval_type": ApprovalTypes.ROLE,
                         "user_role": 1,
-                        "role_selection_strategy": "RANDOM",
+                        "role_selection_strategy": RoleSelectionStrategy.ROUND_ROBIN,
                         "required_form": 1,
                     }
                 ],
@@ -301,9 +301,9 @@ class TestStageSerializerReadmeExample:
                 "color": "#f39c12",
                 "approvals": [
                     {
-                        "approval_type": "ROLE",
+                        "approval_type": ApprovalTypes.ROLE,
                         "user_role": 2,
-                        "role_selection_strategy": "anyone",
+                        "role_selection_strategy": RoleSelectionStrategy.ANYONE,
                         "required_form": 2,
                     }
                 ],
@@ -319,7 +319,7 @@ class TestStageSerializerReadmeExample:
                 "color": "#27ae60",
                 "approvals": [
                     {
-                        "approval_type": "USER",
+                        "approval_type": ApprovalTypes.USER,
                         "approval_user": company_user.id,
                         "required_form": 3,
                     }
@@ -333,18 +333,20 @@ class TestStageSerializerReadmeExample:
         # Verify all stages were configured correctly
         assert updated_stage_1.stage_info["color"] == "#3498db"
         assert (
-            updated_stage_1.stage_info["approvals"][0]["approval_type"] == "role"
+            updated_stage_1.stage_info["approvals"][0]["approval_type"]
+            == ApprovalTypes.ROLE
         )  # Normalized
 
         assert updated_stage_2.stage_info["color"] == "#f39c12"
         assert (
             updated_stage_2.stage_info["approvals"][0]["role_selection_strategy"]
-            == "anyone"
+            == RoleSelectionStrategy.ANYONE
         )
 
         assert updated_stage_3.stage_info["color"] == "#27ae60"
         assert (
-            updated_stage_3.stage_info["approvals"][0]["approval_type"] == "user"
+            updated_stage_3.stage_info["approvals"][0]["approval_type"]
+            == ApprovalTypes.USER
         )  # Normalized
 
     def test_stage_info_validation(self, company_user):
@@ -407,7 +409,7 @@ class TestStageSerializerReadmeExample:
             "stage_info": {
                 "approvals": [
                     {
-                        "approval_type": "USER",
+                        "approval_type": ApprovalTypes.USER,
                         # Missing approval_user
                     }
                 ]
@@ -512,9 +514,9 @@ class TestReadmeCompleteWorkflowExample:
                 "color": "#3498db",
                 "approvals": [
                     {
-                        "approval_type": "ROLE",
+                        "approval_type": ApprovalTypes.ROLE,
                         "user_role": 1,
-                        "role_selection_strategy": "RANDOM",
+                        "role_selection_strategy": RoleSelectionStrategy.ROUND_ROBIN,
                         "required_form": 1,
                     }
                 ],
@@ -532,9 +534,9 @@ class TestReadmeCompleteWorkflowExample:
                 "color": "#f39c12",
                 "approvals": [
                     {
-                        "approval_type": "ROLE",
+                        "approval_type": ApprovalTypes.ROLE,
                         "user_role": 2,
-                        "role_selection_strategy": "anyone",
+                        "role_selection_strategy": RoleSelectionStrategy.ANYONE,
                         "required_form": 2,
                     }
                 ],
@@ -552,7 +554,7 @@ class TestReadmeCompleteWorkflowExample:
                 "color": "#27ae60",
                 "approvals": [
                     {
-                        "approval_type": "USER",
+                        "approval_type": ApprovalTypes.USER,
                         "approval_user": company_user.id,
                         "required_form": 3,
                     }
@@ -571,9 +573,9 @@ class TestReadmeCompleteWorkflowExample:
                 "color": "#8e44ad",
                 "approvals": [
                     {
-                        "approval_type": "ROLE",
+                        "approval_type": ApprovalTypes.ROLE,
                         "user_role": 3,
-                        "role_selection_strategy": "SUPERVISOR",
+                        "role_selection_strategy": RoleSelectionStrategy.CONSENSUS,
                     }
                 ],
             }

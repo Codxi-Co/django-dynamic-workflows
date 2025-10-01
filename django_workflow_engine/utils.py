@@ -12,6 +12,8 @@ from django.contrib.auth import get_user_model
 
 from approval_workflow.choices import RoleSelectionStrategy
 
+from .choices import ApprovalTypes
+
 logger = logging.getLogger(__name__)
 User = get_user_model()
 
@@ -31,7 +33,7 @@ def get_workflow_stage_approvers(stage, created_by_user: User) -> List[Dict[str,
         return [
             {
                 "approval_user": created_by_user,
-                "approval_type": "self",
+                "approval_type": ApprovalTypes.SELF,
             }
         ]
 
@@ -41,7 +43,7 @@ def get_workflow_stage_approvers(stage, created_by_user: User) -> List[Dict[str,
         return [
             {
                 "approval_user": created_by_user,
-                "approval_type": "self",
+                "approval_type": ApprovalTypes.SELF,
             }
         ]
 
@@ -65,18 +67,19 @@ def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
         step = {
             "step": i,
             "extra_fields": {"stage_id": stage.id},
-            "assigned_to": None,
-            "role_selection_strategy": "",
         }
 
-        approval_type = approval_data.get("approval_type", "self")
+        approval_type = approval_data.get("approval_type", ApprovalTypes.SELF)
 
-        if approval_type == "self" or approval_data.get("approval_user"):
+        if approval_type in (
+            ApprovalTypes.SELF,
+            ApprovalTypes.USER,
+        ) or approval_data.get("approval_user"):
             # User-specific approval
             approval_user = approval_data.get("approval_user", created_by_user)
             step["assigned_to"] = approval_user
 
-        elif approval_type == "role" and approval_data.get("user_role"):
+        elif approval_type == ApprovalTypes.ROLE and approval_data.get("user_role"):
             # Role-based approval
             try:
                 from django.apps import apps

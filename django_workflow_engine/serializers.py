@@ -845,11 +845,7 @@ class StageSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError("approvals must be a list")
 
         # Normalize approval_type to lowercase for case-insensitive comparison
-        valid_approval_types = [
-            ApprovalTypes.ROLE.lower(),
-            ApprovalTypes.USER.lower(),
-            ApprovalTypes.SELF.lower(),
-        ]
+        valid_approval_types = [choice[0].lower() for choice in ApprovalTypes.choices]
 
         for approval in approvals:
             if not isinstance(approval, dict):
@@ -879,13 +875,9 @@ class StageSerializer(serializers.ModelSerializer):
                 if strategy:
                     approval["role_selection_strategy"] = strategy
 
-                # Valid strategies from approval_workflow
+                # Valid strategies from RoleSelectionStrategy choices
                 valid_strategies = [
-                    "anyone",
-                    "consensus",
-                    "round_robin",
-                    "random",
-                    "supervisor",
+                    choice[0].lower() for choice in RoleSelectionStrategy.choices
                 ]
                 if strategy and strategy not in valid_strategies:
                     raise serializers.ValidationError(
