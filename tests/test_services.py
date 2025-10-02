@@ -446,7 +446,7 @@ class WorkflowServicesTest(TestCase):
             step,
             "User-based approval step should have 'assigned_to' key",
         )
-        self.assertEqual(step["assigned_to"], self.user.id)
+        self.assertEqual(step["assigned_to"], self.user)
 
         # Should NOT have role_selection_strategy for user-based approval
         self.assertNotIn(
@@ -514,13 +514,13 @@ class WorkflowServicesTest(TestCase):
         step2 = steps[1]
         self.assertIn("assigned_to", step2)
         self.assertNotIn("assigned_role", step2)
-        self.assertEqual(step2["assigned_to"], another_user.id)
+        self.assertEqual(step2["assigned_to"], another_user)
 
         # Step 3: Self-approval - should have assigned_to, NOT assigned_role
         step3 = steps[2]
         self.assertIn("assigned_to", step3)
         self.assertNotIn("assigned_role", step3)
-        self.assertEqual(step3["assigned_to"], self.user.id)
+        self.assertEqual(step3["assigned_to"], self.user)
 
 
 class WorkflowActionServicesTest(TestCase):

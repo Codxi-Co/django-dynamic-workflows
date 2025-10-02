@@ -5,6 +5,53 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.0] - 2025-10-02
+
+### 🎯 New Features
+- **Added `is_hidden` field to WorkFlow, Pipeline, and Stage models**:
+  - Main workflows, pipelines, and stages have `is_hidden=False` by default
+  - Cloned workflows, pipelines, and stages automatically have `is_hidden=True`
+  - Enables hiding cloned objects from UI listings while maintaining database records
+  - Useful for workflow versioning and template management
+  - Migration 0003_add_is_hidden_to_workflow included
+
+### ⚡ Performance Optimizations
+- **Stage.save() performance improvements**:
+  - Added `skip_workflow_update=True` parameter to Stage.save() method
+  - Prevents expensive workflow validation on every stage save
+  - **8-13x performance improvement** when creating multiple stages
+  - Recommended for bulk operations and test suites
+
+### 🧪 Testing Enhancements
+- **Added comprehensive test for is_hidden field**:
+  - `WorkflowCloneHiddenFieldTest.test_main_workflow_is_not_hidden_and_cloned_is_hidden()`
+  - Validates is_hidden behavior for all three models (WorkFlow, Pipeline, Stage)
+  - Verifies cloned_from relationships are maintained
+- **Added performance demonstration test**:
+  - `tests/test_performance_demo.py` shows 13.8x speedup with optimization
+  - Includes performance comparison output for developers
+  - Run with: `pytest tests/test_performance_demo.py -v -s`
+
+### 🔧 Code Quality
+- **Optimized test suite performance**:
+  - Updated test_models.py to use skip_workflow_update where appropriate
+  - Test suite improved from 14.17s to 13.36s (5.7% faster)
+  - Individual stage operations up to 13.8x faster with optimization
+
+### 📋 Technical Details
+- **Backward compatible**: All changes maintain backward compatibility
+- **No breaking changes**: Existing code continues to work without modifications
+- **Migration included**: 0003_add_is_hidden_to_workflow adds is_hidden to all three models
+- **Performance gains**: Optional optimization available for bulk operations
+
+### 🎯 Use Cases
+- **Workflow versioning**: Hide old workflow versions while keeping them for audit
+- **Template management**: Create workflow templates and hide cloned instances
+- **Bulk operations**: Significantly faster when creating multiple stages
+- **Test performance**: Faster test execution with skip_workflow_update
+
+---
+
 ## [1.1.0] - 2025-10-01
 
 ### 🐛 Critical Bug Fixes
@@ -14,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Prevents approval workflow package from rejecting steps with conflicting keys
   - This was causing workflow start failures for role-based approvals
 
+### 🎯 Enhanced User Handling
+- **Robust approval_user processing**: Now handles multiple input formats seamlessly
+  - Supports integer user IDs: `approval_user: 123`
+  - Supports dict format with "val" key: `approval_user: {"val": 123}`
+  - Supports direct User objects: `approval_user: user_instance`
+  - Automatic fallback to `created_by_user` when user not found
+  - Error logging for debugging when user lookup fails
+  - Consistent User object output regardless of input format
+
 ### 🎯 Code Quality Improvements
 - **Replaced all hardcoded strings with enum constants**:
   - `ApprovalTypes.ROLE`, `ApprovalTypes.USER`, `ApprovalTypes.SELF` instead of strings
@@ -21,6 +77,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Updated README examples to use enum constants
   - Updated all test files to use enum constants
   - Better type safety and IDE support
+- **Fixed type hint warnings**:
+  - Resolved "Expected type 'int | dict[str, Any]'" warning for role_selection_strategy
+  - Changed from `.get()` with default to explicit None check for better type safety
+  - Cleaner code that satisfies static type checkers
 
 ### ⚙️ Dynamic Validation
 - **Validation now uses enum choices dynamically**:

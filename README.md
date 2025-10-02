@@ -63,24 +63,6 @@ DJANGO_WORKFLOW_ENGINE = {
     }
 }
 ```
-
-### Department Model Configuration
-
-The `DEPARTMENT_MODEL` setting allows you to map the department field in workflows to any model in your project:
-
-```python
-# Map to your custom Department model
-'DEPARTMENT_MODEL': 'myapp.Department'
-
-# Map to Django's built-in Group model
-'DEPARTMENT_MODEL': 'auth.Group'
-
-# Map to any other model with a name field
-'DEPARTMENT_MODEL': 'companies.Division'
-```
-
-This provides maximum flexibility for organizing workflows by departments, divisions, teams, or any organizational structure.
-
 ### Company Model Architecture
 
 **Important**: The `company` field in workflow models uses Django's `AUTH_USER_MODEL` (User model) for maximum flexibility:

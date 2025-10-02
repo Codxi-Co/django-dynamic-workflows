@@ -77,6 +77,23 @@ def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
         ) or approval_data.get("approval_user"):
             # User-specific approval
             approval_user = approval_data.get("approval_user", created_by_user)
+            if isinstance(approval_user, int):
+                try:
+                    approval_user = User.objects.get(id=approval_user)
+                except User.DoesNotExist:
+                    logger.error(
+                        f"User with ID {approval_user} not found, falling back to created_by"
+                    )
+                    approval_user = created_by_user
+            elif isinstance(approval_user, dict) and "val" in approval_user:
+                try:
+                    user_id = approval_user["val"]
+                    approval_user = User.objects.get(id=user_id)
+                except User.DoesNotExist:
+                    logger.error(
+                        f"User with ID {user_id} not found, falling back to created_by"
+                    )
+                    approval_user = created_by_user
             step["assigned_to"] = approval_user
 
         elif approval_type == ApprovalTypes.ROLE and approval_data.get("user_role"):
@@ -92,8 +109,11 @@ def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
 
                 role = RoleModel.objects.get(id=approval_data["user_role"])
                 step["assigned_role"] = role
-                step["role_selection_strategy"] = approval_data.get(
-                    "role_selection_strategy", RoleSelectionStrategy.ANYONE
+                role_selection_strategy = approval_data.get("role_selection_strategy")
+                step["role_selection_strategy"] = (
+                    role_selection_strategy
+                    if role_selection_strategy is not None
+                    else RoleSelectionStrategy.ANYONE
                 )
             except Exception as e:
                 logger.error(f"Error setting up role-based approval: {e}")

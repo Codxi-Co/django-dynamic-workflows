@@ -92,7 +92,7 @@ class WorkFlowModelTest(TestCase):
             created_by=self.user,
         )
 
-        Stage.objects.create(
+        stage = Stage(
             pipeline=pipeline,
             company=self.company_user,
             name_en="Stage 1",
@@ -104,8 +104,10 @@ class WorkFlowModelTest(TestCase):
                 "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
             },
         )
+        stage.save(skip_workflow_update=True)
 
-        # Refresh workflow
+        # Manually update workflow status
+        workflow.update_active_status()
         workflow.refresh_from_db()
         self.assertTrue(workflow.is_active)
 
@@ -438,6 +440,95 @@ class WorkflowConfigurationModelTest(TestCase):
         self.assertTrue(config.is_enabled)
         self.assertTrue(config.auto_start_workflow)
         self.assertEqual(config.status_field, "workflow_status")
+
+
+class WorkflowCloneHiddenFieldTest(TestCase):
+    """Test cases for is_hidden field on WorkFlow, Pipeline, and Stage models."""
+
+    def setUp(self):
+        self.user = User.objects.create_user(
+            username="testuser", email="test@example.com", password="testpass123"
+        )
+        import uuid
+
+        unique_id = str(uuid.uuid4())[:8]
+        self.company_user = User.objects.create_user(
+            username=f"testcompany{unique_id}",
+            email=f"company{unique_id}@example.com",
+            password="testpass123",
+        )
+        self.company = Company.objects.create(name="Test Company")
+        self.department = Department.objects.create(
+            name="Test Department", company=self.company
+        )
+
+    def test_main_workflow_is_not_hidden_and_cloned_is_hidden(self):
+        """Test that main workflows have is_hidden=False and cloned workflows have is_hidden=True."""
+        # Create main workflow with pipelines and stages
+        main_workflow = WorkFlow.objects.create(
+            company=self.company_user,
+            name_en="Main Workflow",
+            name_ar="سير العمل الرئيسي",
+            status=WorkflowStatus.ACTIVE,
+            created_by=self.user,
+        )
+
+        main_pipeline = Pipeline.objects.create(
+            workflow=main_workflow,
+            company=self.company_user,
+            name_en="Main Pipeline",
+            name_ar="خط أنابيب رئيسي",
+            department=self.department,
+            created_by=self.user,
+            order=0,
+        )
+
+        main_stage = Stage.objects.create(
+            pipeline=main_pipeline,
+            company=self.company_user,
+            name_en="Main Stage",
+            name_ar="المرحلة الرئيسية",
+            created_by=self.user,
+            order=0,
+            is_active=True,
+            stage_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.id}]
+            },
+        )
+
+        # Verify main objects have is_hidden=False
+        self.assertFalse(
+            main_workflow.is_hidden, "Main workflow should have is_hidden=False"
+        )
+        self.assertFalse(
+            main_pipeline.is_hidden, "Main pipeline should have is_hidden=False"
+        )
+        self.assertFalse(main_stage.is_hidden, "Main stage should have is_hidden=False")
+
+        # Clone the workflow
+        cloned_workflow = main_workflow.clone()
+
+        # Verify cloned workflow has is_hidden=True
+        self.assertTrue(
+            cloned_workflow.is_hidden, "Cloned workflow should have is_hidden=True"
+        )
+
+        # Get cloned pipeline and stage
+        cloned_pipeline = cloned_workflow.pipelines.first()
+        cloned_stage = cloned_pipeline.stages.first()
+
+        # Verify cloned pipeline and stage have is_hidden=True
+        self.assertTrue(
+            cloned_pipeline.is_hidden, "Cloned pipeline should have is_hidden=True"
+        )
+        self.assertTrue(
+            cloned_stage.is_hidden, "Cloned stage should have is_hidden=True"
+        )
+
+        # Verify cloned_from relationships
+        self.assertEqual(cloned_workflow.cloned_from, main_workflow)
+        self.assertEqual(cloned_pipeline.cloned_from, main_pipeline)
+        self.assertEqual(cloned_stage.cloned_from, main_stage)
 
 
 @pytest.mark.django_db

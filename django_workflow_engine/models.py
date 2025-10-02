@@ -139,6 +139,11 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
         help_text=_("Whether this workflow is active and can be used"),
         verbose_name=_("Is Active"),
     )
+    is_hidden = models.BooleanField(
+        default=False,
+        help_text=_("Whether this workflow is hidden (true for cloned workflows)"),
+        verbose_name=_("Is Hidden"),
+    )
 
     class Meta:
         # Remove company-based unique constraints since company is now optional
@@ -203,7 +208,9 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
         logger.info(f"Starting clone process for WorkFlow: {self.id} ({self.name_en})")
 
         with transaction.atomic():
-            cloned_workflow = super().clone(modified_keys=["name_en", "name_ar"])
+            cloned_workflow = super().clone(
+                modified_keys=["name_en", "name_ar"], overrides={"is_hidden": True}
+            )
             logger.info(f"Cloned WorkFlow {self.id} -> {cloned_workflow.id}")
 
             pipeline_map = {}
@@ -211,7 +218,7 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
             for pipeline in self.pipelines.all():
                 cloned_pipeline = pipeline.clone(
                     modified_keys=["name_en", "name_ar"],
-                    overrides={"workflow": cloned_workflow},
+                    overrides={"workflow": cloned_workflow, "is_hidden": True},
                 )
                 pipeline_map[pipeline.id] = cloned_pipeline
                 logger.info(f"Cloned Pipeline {pipeline.id} -> {cloned_pipeline.id}")
@@ -219,7 +226,7 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
                 for stage in pipeline.stages.all():
                     stage.clone(
                         modified_keys=["name_en", "name_ar"],
-                        overrides={"pipeline": cloned_pipeline},
+                        overrides={"pipeline": cloned_pipeline, "is_hidden": True},
                     )
                     logger.info(
                         f"Cloned Stage {stage.id} for Pipeline {cloned_pipeline.id}"
@@ -256,6 +263,11 @@ class Pipeline(CompanyBaseWithNamedModelWithClone):
     department = GenericForeignKey("department_content_type", "department_id")
     order = models.PositiveIntegerField(
         default=0, help_text=_("Order of this pipeline in the workflow")
+    )
+    is_hidden = models.BooleanField(
+        default=False,
+        help_text=_("Whether this pipeline is hidden (true for cloned pipelines)"),
+        verbose_name=_("Is Hidden"),
     )
 
     @property
@@ -299,6 +311,11 @@ class Stage(CompanyBaseWithNamedModelWithClone):
     is_active = models.BooleanField(default=False)
     order = models.PositiveIntegerField(
         default=0, help_text=_("Order of this stage in the pipeline")
+    )
+    is_hidden = models.BooleanField(
+        default=False,
+        help_text=_("Whether this stage is hidden (true for cloned stages)"),
+        verbose_name=_("Is Hidden"),
     )
 
     class Meta:
