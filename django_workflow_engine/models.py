@@ -208,29 +208,82 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
         logger.info(f"Starting clone process for WorkFlow: {self.id} ({self.name_en})")
 
         with transaction.atomic():
+            # Clone workflow first
             cloned_workflow = super().clone(
                 modified_keys=["name_en", "name_ar"], overrides={"is_hidden": True}
             )
             logger.info(f"Cloned WorkFlow {self.id} -> {cloned_workflow.id}")
 
-            pipeline_map = {}
+            # Prefetch all related data in one query
+            pipelines = list(self.pipelines.prefetch_related("stages").all())
 
-            for pipeline in self.pipelines.all():
-                cloned_pipeline = pipeline.clone(
-                    modified_keys=["name_en", "name_ar"],
-                    overrides={"workflow": cloned_workflow, "is_hidden": True},
+            if not pipelines:
+                logger.info("No pipelines to clone")
+                return cloned_workflow
+
+            # Prepare all pipelines for bulk creation
+            pipelines_to_create = []
+            pipeline_mapping = {}  # Maps old pipeline to new pipeline data
+
+            for pipeline in pipelines:
+                # Create new pipeline instance (not saved yet)
+                new_pipeline = Pipeline(
+                    workflow=cloned_workflow,
+                    company=pipeline.company,
+                    name_en=f"{pipeline.name_en} (Copy)" if pipeline.name_en else None,
+                    name_ar=f"{pipeline.name_ar} (Copy)" if pipeline.name_ar else None,
+                    department_content_type=pipeline.department_content_type,
+                    department_id=pipeline.department_id,
+                    order=pipeline.order,
+                    is_hidden=True,
+                    created_by=pipeline.created_by,
+                    modified_by=pipeline.modified_by,
+                    cloned_from=pipeline,
                 )
-                pipeline_map[pipeline.id] = cloned_pipeline
-                logger.info(f"Cloned Pipeline {pipeline.id} -> {cloned_pipeline.id}")
+                pipelines_to_create.append(new_pipeline)
+                # Store reference for stage cloning
+                pipeline_mapping[pipeline.id] = {
+                    "pipeline_obj": new_pipeline,
+                    "stages": list(pipeline.stages.all()),
+                }
 
-                for stage in pipeline.stages.all():
-                    stage.clone(
-                        modified_keys=["name_en", "name_ar"],
-                        overrides={"pipeline": cloned_pipeline, "is_hidden": True},
+            # Bulk create all pipelines in one query
+            created_pipelines = Pipeline.objects.bulk_create(pipelines_to_create)
+            logger.info(f"Bulk created {len(created_pipelines)} pipelines")
+
+            # Update pipeline_mapping with created pipelines (with IDs)
+            for idx, pipeline_id in enumerate(pipeline_mapping.keys()):
+                pipeline_mapping[pipeline_id]["created_pipeline"] = created_pipelines[
+                    idx
+                ]
+
+            # Prepare all stages for bulk creation
+            stages_to_create = []
+            for pipeline_id, data in pipeline_mapping.items():
+                created_pipeline = data["created_pipeline"]
+                stages = data["stages"]
+
+                for stage in stages:
+                    new_stage = Stage(
+                        pipeline=created_pipeline,
+                        company=stage.company,
+                        name_en=f"{stage.name_en} (Copy)" if stage.name_en else None,
+                        name_ar=f"{stage.name_ar} (Copy)" if stage.name_ar else None,
+                        form_info=stage.form_info.copy() if stage.form_info else [],
+                        stage_info=stage.stage_info.copy() if stage.stage_info else {},
+                        is_active=stage.is_active,
+                        order=stage.order,
+                        is_hidden=True,
+                        created_by=stage.created_by,
+                        modified_by=stage.modified_by,
+                        cloned_from=stage,
                     )
-                    logger.info(
-                        f"Cloned Stage {stage.id} for Pipeline {cloned_pipeline.id}"
-                    )
+                    stages_to_create.append(new_stage)
+
+            # Bulk create all stages in one query
+            if stages_to_create:
+                created_stages = Stage.objects.bulk_create(stages_to_create)
+                logger.info(f"Bulk created {len(created_stages)} stages")
 
         logger.info(
             f"Clone process completed successfully for WorkFlow: {cloned_workflow.id}"

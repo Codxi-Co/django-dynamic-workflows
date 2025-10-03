@@ -3,7 +3,28 @@
 import uuid
 from unittest.mock import Mock, patch
 
+from django.conf import settings
+
 import pytest
+
+
+# Optimize Django settings for tests
+def pytest_configure(config):
+    """Configure Django settings for optimal test performance."""
+    settings.DEBUG = False
+    settings.TEMPLATE_DEBUG = False
+
+    # Disable migrations for faster test database creation
+    settings.MIGRATION_MODULES = {
+        "django_workflow_engine": None,
+        "approval_workflow": None,
+        "auth": None,
+        "contenttypes": None,
+        "sessions": None,
+    }
+
+    # Disable workflow emails by default in tests
+    settings.WORKFLOW_DISABLE_EMAILS = True
 
 
 @pytest.fixture(autouse=True)
@@ -12,6 +33,14 @@ def mock_email_backend():
     with patch("django.core.mail.send_mail") as mock_send:
         mock_send.return_value = True  # Simulate successful email sending
         yield mock_send
+
+
+@pytest.fixture(autouse=True)
+def mock_async_email_backend():
+    """Mock async email attempts to prevent task queue operations in tests."""
+    with patch("django_workflow_engine.default_actions._try_async_email") as mock_async:
+        mock_async.return_value = False  # No async email available by default
+        yield mock_async
 
 
 # Remove auto-mocking that breaks tests - use selective mocking instead

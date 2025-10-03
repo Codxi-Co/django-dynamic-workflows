@@ -273,7 +273,11 @@ def attach_workflow_to_object(
         logger.info(
             f"Cloning workflow '{workflow.name_en}' (ID: {workflow.id}) for object {obj}"
         )
-        workflow_to_use = workflow.clone()
+        # Prefetch related data for efficient cloning
+        workflow_with_relations = WorkFlow.objects.prefetch_related(
+            "pipelines__stages"
+        ).get(id=workflow.id)
+        workflow_to_use = workflow_with_relations.clone()
         logger.info(
             f"Workflow cloned successfully. Original ID: {workflow.id}, Cloned ID: {workflow_to_use.id}"
         )
@@ -341,8 +345,10 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
     content_type = ContentType.objects.get_for_model(obj)
 
     try:
-        attachment = WorkflowAttachment.objects.get(
-            content_type=content_type, object_id=str(obj.pk)
+        attachment = (
+            WorkflowAttachment.objects.select_related("workflow")
+            .prefetch_related("workflow__pipelines__stages")
+            .get(content_type=content_type, object_id=str(obj.pk))
         )
     except WorkflowAttachment.DoesNotExist:
         raise ValueError(f"No workflow attached to {obj._meta.label}({obj.pk})")
@@ -350,7 +356,7 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
     if attachment.status != WorkflowAttachmentStatus.NOT_STARTED:
         raise ValueError(f"Workflow already started (status: {attachment.status})")
 
-    # Get first stage
+    # Get first stage (data already prefetched)
     first_pipeline = attachment.workflow.pipelines.order_by("order").first()
     if not first_pipeline:
         raise ValueError(f"Workflow '{attachment.workflow.name_en}' has no pipelines")

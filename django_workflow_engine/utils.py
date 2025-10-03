@@ -51,7 +51,7 @@ def get_workflow_stage_approvers(stage, created_by_user: User) -> List[Dict[str,
 
 
 def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
-    """Build approval steps for a workflow stage.
+    """Build approval steps for a workflow stage with optimized batch queries.
 
     Args:
         stage: The Stage instance
@@ -63,6 +63,75 @@ def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
     approvals = get_workflow_stage_approvers(stage, created_by_user)
     steps = []
 
+    # Batch fetch all users, roles, and forms to avoid N+1 queries
+    user_ids = []
+    role_ids = []
+    form_ids = []
+
+    for approval_data in approvals:
+        approval_type = approval_data.get("approval_type", ApprovalTypes.SELF)
+
+        # Collect user IDs
+        if approval_type in (
+            ApprovalTypes.SELF,
+            ApprovalTypes.USER,
+        ) or approval_data.get("approval_user"):
+            approval_user = approval_data.get("approval_user")
+            if isinstance(approval_user, int):
+                user_ids.append(approval_user)
+            elif isinstance(approval_user, dict) and "val" in approval_user:
+                user_ids.append(approval_user["val"])
+
+        # Collect role IDs
+        if approval_type == ApprovalTypes.ROLE and approval_data.get("user_role"):
+            role_ids.append(approval_data["user_role"])
+
+        # Collect form IDs
+        if approval_data.get("required_form"):
+            form_id = approval_data["required_form"]
+            if isinstance(form_id, dict) and "val" in form_id:
+                form_ids.append(form_id["val"])
+            else:
+                form_ids.append(form_id)
+
+    # Batch fetch all users
+    users_map = {}
+    if user_ids:
+        users_map = {user.id: user for user in User.objects.filter(id__in=user_ids)}
+
+    # Batch fetch all roles
+    roles_map = {}
+    if role_ids:
+        try:
+            from django.apps import apps
+
+            role_model_path = getattr(settings, "APPROVAL_ROLE_MODEL", "common.Role")
+            app_label, model_name = role_model_path.split(".")
+            RoleModel = apps.get_model(app_label, model_name)
+            roles_map = {
+                role.id: role for role in RoleModel.objects.filter(id__in=role_ids)
+            }
+        except Exception as e:
+            logger.error(f"Error fetching roles: {e}")
+
+    # Batch fetch all forms
+    forms_map = {}
+    if form_ids:
+        try:
+            from django.apps import apps
+
+            form_model_path = getattr(
+                settings, "APPROVAL_DYNAMIC_FORM_MODEL", "common.DynamicForm"
+            )
+            app_label, model_name = form_model_path.split(".")
+            FormModel = apps.get_model(app_label, model_name)
+            forms_map = {
+                form.id: form for form in FormModel.objects.filter(id__in=form_ids)
+            }
+        except Exception as e:
+            logger.error(f"Error fetching forms: {e}")
+
+    # Build steps using cached data
     for i, approval_data in enumerate(approvals, start=1):
         step = {
             "step": i,
@@ -78,36 +147,17 @@ def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
             # User-specific approval
             approval_user = approval_data.get("approval_user", created_by_user)
             if isinstance(approval_user, int):
-                try:
-                    approval_user = User.objects.get(id=approval_user)
-                except User.DoesNotExist:
-                    logger.error(
-                        f"User with ID {approval_user} not found, falling back to created_by"
-                    )
-                    approval_user = created_by_user
+                approval_user = users_map.get(approval_user, created_by_user)
             elif isinstance(approval_user, dict) and "val" in approval_user:
-                try:
-                    user_id = approval_user["val"]
-                    approval_user = User.objects.get(id=user_id)
-                except User.DoesNotExist:
-                    logger.error(
-                        f"User with ID {user_id} not found, falling back to created_by"
-                    )
-                    approval_user = created_by_user
+                user_id = approval_user["val"]
+                approval_user = users_map.get(user_id, created_by_user)
             step["assigned_to"] = approval_user
 
         elif approval_type == ApprovalTypes.ROLE and approval_data.get("user_role"):
             # Role-based approval
-            try:
-                from django.apps import apps
-
-                role_model_path = getattr(
-                    settings, "APPROVAL_ROLE_MODEL", "common.Role"
-                )
-                app_label, model_name = role_model_path.split(".")
-                RoleModel = apps.get_model(app_label, model_name)
-
-                role = RoleModel.objects.get(id=approval_data["user_role"])
+            role_id = approval_data["user_role"]
+            role = roles_map.get(role_id)
+            if role:
                 step["assigned_role"] = role
                 role_selection_strategy = approval_data.get("role_selection_strategy")
                 step["role_selection_strategy"] = (
@@ -115,30 +165,23 @@ def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
                     if role_selection_strategy is not None
                     else RoleSelectionStrategy.ANYONE
                 )
-            except Exception as e:
-                logger.error(f"Error setting up role-based approval: {e}")
-                # Fallback to self-approval
+            else:
+                logger.error(
+                    f"Role with ID {role_id} not found, falling back to self-approval"
+                )
                 step["assigned_to"] = created_by_user
 
         # Add form if specified
         if approval_data.get("required_form"):
-            try:
-                from django.apps import apps
+            form_id = approval_data["required_form"]
+            if isinstance(form_id, dict) and "val" in form_id:
+                form_id = form_id["val"]
 
-                form_model_path = getattr(
-                    settings, "APPROVAL_DYNAMIC_FORM_MODEL", "common.DynamicForm"
-                )
-                app_label, model_name = form_model_path.split(".")
-                FormModel = apps.get_model(app_label, model_name)
-
-                form_id = approval_data["required_form"]
-                if isinstance(form_id, dict) and "val" in form_id:
-                    form_id = form_id["val"]
-
-                form = FormModel.objects.get(id=form_id)
+            form = forms_map.get(form_id)
+            if form:
                 step["form"] = form
-            except Exception as e:
-                logger.error(f"Error setting up form for approval step: {e}")
+            else:
+                logger.error(f"Form with ID {form_id} not found")
 
         steps.append(step)
 

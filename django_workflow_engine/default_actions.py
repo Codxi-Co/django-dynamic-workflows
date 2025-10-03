@@ -466,7 +466,7 @@ def default_send_email_on_workflow_complete(**context) -> bool:
 def _send_email(
     recipients: list, subject: str, message: str, context: Dict[str, Any]
 ) -> bool:
-    """Send email using Django's email backend.
+    """Send email using Django's email backend (async-safe).
 
     Args:
         recipients: List of email addresses
@@ -479,18 +479,27 @@ def _send_email(
     """
     try:
         from django.conf import settings
+
+        # Check if emails are disabled for performance
+        if getattr(settings, "WORKFLOW_DISABLE_EMAILS", False):
+            logger.debug(f"Emails disabled, skipping email to {recipients}")
+            return True
+
+        # Try async email sending first (Celery, Django-Q, etc.)
+        if _try_async_email(recipients, subject, message):
+            return True
+
+        # Fallback to synchronous email
         from django.core.mail import send_mail
 
-        # Get sender email from settings
         from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@example.com")
 
-        # Send email
         send_mail(
             subject=subject,
             message=message,
             from_email=from_email,
             recipient_list=recipients,
-            fail_silently=False,
+            fail_silently=True,  # Don't block on email failures
         )
 
         logger.info(f"Email sent successfully to {recipients}")
@@ -498,4 +507,56 @@ def _send_email(
 
     except Exception as e:
         logger.error(f"Failed to send email to {recipients}: {str(e)}")
+        return False
+
+
+def _try_async_email(recipients: list, subject: str, message: str) -> bool:
+    """Try to send email asynchronously using available task queue.
+
+    Args:
+        recipients: List of email addresses
+        subject: Email subject
+        message: Email message body
+
+    Returns:
+        True if async email was queued, False otherwise
+    """
+    try:
+        # Try Celery first
+        try:
+            from celery import current_app
+
+            if current_app:
+                # Queue email task asynchronously
+                current_app.send_task(
+                    "django_workflow_engine.tasks.send_email_task",
+                    args=[recipients, subject, message],
+                    ignore_result=True,
+                )
+                logger.debug(f"Email queued to Celery for {recipients}")
+                return True
+        except (ImportError, Exception):
+            pass
+
+        # Try Django-Q
+        try:
+            from django_q.tasks import async_task
+
+            async_task(
+                "django.core.mail.send_mail",
+                subject,
+                message,
+                None,
+                recipients,
+                fail_silently=True,
+            )
+            logger.debug(f"Email queued to Django-Q for {recipients}")
+            return True
+        except (ImportError, Exception):
+            pass
+
+        return False
+
+    except Exception as e:
+        logger.debug(f"Could not queue async email: {str(e)}")
         return False

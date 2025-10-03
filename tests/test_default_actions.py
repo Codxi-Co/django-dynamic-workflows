@@ -368,9 +368,12 @@ class DefaultActionsTest(TestCase):
         result = default_send_email_after_approve(**context)
         self.assertFalse(result)
 
+    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", False)
+    @patch("django_workflow_engine.default_actions._try_async_email")
     @patch("django.core.mail.send_mail")
-    def test_send_email_function(self, mock_send_mail):
+    def test_send_email_function(self, mock_send_mail, mock_async_email):
         """Test the internal _send_email function."""
+        mock_async_email.return_value = False  # No async email available
         mock_send_mail.return_value = True
 
         recipients = ["test1@example.com", "test2@example.com"]
@@ -386,12 +389,15 @@ class DefaultActionsTest(TestCase):
             message=message,
             from_email="noreply@example.com",  # Default from settings
             recipient_list=recipients,
-            fail_silently=False,
+            fail_silently=True,  # Changed to True for non-blocking behavior
         )
 
+    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", False)
+    @patch("django_workflow_engine.default_actions._try_async_email")
     @patch("django.core.mail.send_mail")
-    def test_send_email_function_failure(self, mock_send_mail):
+    def test_send_email_function_failure(self, mock_send_mail, mock_async_email):
         """Test _send_email function when email sending fails."""
+        mock_async_email.return_value = False  # No async email available
         mock_send_mail.side_effect = Exception("SMTP Error")
 
         recipients = ["test@example.com"]
@@ -402,6 +408,38 @@ class DefaultActionsTest(TestCase):
         result = _send_email(recipients, subject, message, context)
 
         self.assertFalse(result)
+
+    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", False)
+    @patch("django_workflow_engine.default_actions._try_async_email")
+    def test_send_email_with_async(self, mock_async_email):
+        """Test _send_email function with async email enabled."""
+        mock_async_email.return_value = True  # Async email succeeded
+
+        recipients = ["test@example.com"]
+        subject = "Test Subject"
+        message = "Test message"
+        context = {}
+
+        result = _send_email(recipients, subject, message, context)
+
+        self.assertTrue(result)
+        mock_async_email.assert_called_once_with(recipients, subject, message)
+
+    @patch("django_workflow_engine.default_actions._try_async_email")
+    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", True, create=True)
+    def test_send_email_disabled(self, mock_async_email):
+        """Test _send_email function when emails are disabled."""
+        recipients = ["test@example.com"]
+        subject = "Test Subject"
+        message = "Test message"
+        context = {}
+
+        result = _send_email(recipients, subject, message, context)
+
+        # Should return True but not actually send
+        self.assertTrue(result)
+        # Async email should not be attempted
+        mock_async_email.assert_not_called()
 
     def test_user_with_started_by_different_from_created_by(self):
         """Test email recipients when started_by is different from created_by."""
