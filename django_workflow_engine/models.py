@@ -16,7 +16,13 @@ from django.db import models, transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
-from .choices import ActionType, ApprovalTypes, WorkflowAttachmentStatus, WorkflowStatus
+from .choices import (
+    ActionType,
+    ApprovalType,
+    ApprovalTypes,
+    WorkflowAttachmentStatus,
+    WorkflowStatus,
+)
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -417,7 +423,33 @@ class Stage(CompanyBaseWithNamedModelWithClone):
             return False
         elif approval_type == ApprovalTypes.SELF:
             # Self-approved doesn't require additional fields
-            return True
+            pass
+
+        # Validate step_approval_type if provided (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE)
+        step_approval_type = approval_config.get("step_approval_type")
+        if step_approval_type:
+            valid_step_types = [choice[0] for choice in ApprovalType.choices]
+            if step_approval_type not in valid_step_types:
+                logger.warning(
+                    f"Invalid step_approval_type '{step_approval_type}' in stage {self.name_en}"
+                )
+                return False
+
+            # Validate SUBMIT type requirements
+            if step_approval_type == ApprovalType.SUBMIT:
+                if not approval_config.get("required_form"):
+                    logger.warning(
+                        f"SUBMIT type requires a form in stage {self.name_en}"
+                    )
+                    return False
+
+            # Validate MOVE type restrictions
+            if step_approval_type == ApprovalType.MOVE:
+                if approval_config.get("required_form"):
+                    logger.warning(
+                        f"MOVE type cannot have a form in stage {self.name_en}"
+                    )
+                    return False
 
         return True
 

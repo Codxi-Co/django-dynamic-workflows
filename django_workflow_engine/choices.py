@@ -6,7 +6,11 @@ from django.db import models
 from django.utils.translation import gettext_lazy as _
 
 # Import approval-related choices from the approval_workflow package
-from approval_workflow.choices import ApprovalStatus, RoleSelectionStrategy
+from approval_workflow.choices import (
+    ApprovalStatus,
+    ApprovalType,
+    RoleSelectionStrategy,
+)
 
 
 class WorkflowStatus(models.TextChoices):

@@ -892,6 +892,40 @@ class StageSerializer(serializers.ModelSerializer):
                         "approval_user is required for USER approval type"
                     )
 
+            # Validate step_approval_type (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE)
+            step_approval_type = approval.get("step_approval_type")
+            if step_approval_type:
+                # Import ApprovalType from approval_workflow
+                from approval_workflow.choices import ApprovalType
+
+                valid_step_types = [
+                    choice[0].lower() for choice in ApprovalType.choices
+                ]
+                step_type_lower = step_approval_type.lower()
+
+                # Normalize to lowercase
+                approval["step_approval_type"] = step_type_lower
+
+                if step_type_lower not in valid_step_types:
+                    raise serializers.ValidationError(
+                        f"Invalid step_approval_type: {step_approval_type}. "
+                        f"Must be one of: approve, submit, check_in_verify, move (case-insensitive)"
+                    )
+
+                # SUBMIT type must have a form
+                if step_type_lower == ApprovalType.SUBMIT.lower():
+                    if "required_form" not in approval or not approval["required_form"]:
+                        raise serializers.ValidationError(
+                            "SUBMIT step_approval_type requires a required_form to be specified"
+                        )
+
+                # MOVE type cannot have a form
+                if step_type_lower == ApprovalType.MOVE.lower():
+                    if approval.get("required_form"):
+                        raise serializers.ValidationError(
+                            "MOVE step_approval_type cannot have a required_form"
+                        )
+
         return value
 
     def update(self, instance, validated_data):

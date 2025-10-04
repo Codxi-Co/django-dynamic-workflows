@@ -8,6 +8,7 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 - **Database-Stored Actions**: Configure actions dynamically in the database with inheritance system
 - **Action Inheritance**: Stage → Pipeline → Workflow → Default action hierarchy
 - **Approval Flow Integration**: Built on top of django-approval-workflow package
+- **Approval Type Support**: Control approval behavior with APPROVE, SUBMIT, CHECK_IN_VERIFY, and MOVE types
 - **Complete Approval Actions**: Full support for approve, reject, delegate, and resubmission workflows
 - **Resubmission & Delegation Logic**: Proper stage transitions and user assignments with workflow event triggers
 - **Configurable Triggers**: Actions triggered on workflow events (approve, reject, delegate, etc.)
@@ -419,9 +420,10 @@ from approval_workflow.choices import RoleSelectionStrategy
 'round_robin'  # Rotate approval among role users
 ```
 
-### 📚 Comprehensive Guide
+### 📚 Comprehensive Guides
 
-For complete documentation including advanced examples, conflict resolution, and best practices, see: **[CUSTOM_ACTIONS_README.md](CUSTOM_ACTIONS_README.md)**
+- **Custom Actions**: For complete documentation including advanced examples, conflict resolution, and best practices, see: **[CUSTOM_ACTIONS_README.md](CUSTOM_ACTIONS_README.md)**
+- **Approval Types**: For detailed information on approval behavior types (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE), see: **[APPROVAL_TYPE_INTEGRATION_GUIDE.md](APPROVAL_TYPE_INTEGRATION_GUIDE.md)**
 
 ## Complete Example: Purchase Request Workflow
 

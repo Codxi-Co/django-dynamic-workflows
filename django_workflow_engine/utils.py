@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 from django.conf import settings
 from django.contrib.auth import get_user_model
 
-from approval_workflow.choices import RoleSelectionStrategy
+from approval_workflow.choices import ApprovalType, RoleSelectionStrategy
 
 from .choices import ApprovalTypes
 
@@ -182,6 +182,23 @@ def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
                 step["form"] = form
             else:
                 logger.error(f"Form with ID {form_id} not found")
+
+        # Add step_approval_type (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE)
+        # This determines the behavior of the approval step
+        step_approval_type = approval_data.get("step_approval_type")
+        if step_approval_type:
+            # Validate it's a valid ApprovalType
+            valid_step_types = [choice[0] for choice in ApprovalType.choices]
+            if step_approval_type in valid_step_types:
+                step["approval_type"] = step_approval_type
+            else:
+                logger.warning(
+                    f"Invalid step_approval_type '{step_approval_type}', defaulting to APPROVE"
+                )
+                step["approval_type"] = ApprovalType.APPROVE
+        else:
+            # Default to APPROVE if not specified
+            step["approval_type"] = ApprovalType.APPROVE
 
         steps.append(step)
 
