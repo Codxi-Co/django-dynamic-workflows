@@ -23,6 +23,7 @@ from .choices import (
     WorkflowAttachmentStatus,
     WorkflowStatus,
 )
+from .constants import ERROR_MESSAGES
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -579,7 +580,14 @@ class WorkflowAttachment(models.Model):
                 return first_pipeline.stages.order_by("order").first()
             return None
 
-        current_pipeline = self.current_stage.pipeline
+        # Use current_pipeline field for consistency, fallback to current_stage.pipeline
+        current_pipeline = self.current_pipeline or self.current_stage.pipeline
+
+        if not current_pipeline:
+            logger.error(
+                ERROR_MESSAGES["no_current_pipeline"].format(attachment_id=self.id)
+            )
+            return None
 
         # Try to get next stage in current pipeline
         next_stage = (

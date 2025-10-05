@@ -9,13 +9,60 @@ from typing import Any, Dict, List, Optional
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.db.models import Model
 
 from approval_workflow.choices import ApprovalType, RoleSelectionStrategy
 
 from .choices import ApprovalTypes
+from .constants import ERROR_MESSAGES
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+def get_user_for_approval(
+    obj: Model, user: Optional[User] = None, attachment=None
+) -> Optional[User]:
+    """Get user for approval with proper fallback logic.
+
+    This utility function implements a consistent fallback strategy for finding
+    a user to use for approval step creation. It tries multiple sources in order:
+    1. Provided user parameter
+    2. obj.created_by
+    3. obj.started_by
+    4. attachment.started_by
+
+    Args:
+        obj: The model instance being processed
+        user: Optional user to use (highest priority)
+        attachment: Optional WorkflowAttachment instance for additional fallback
+
+    Returns:
+        User instance or None if no user found
+
+    Example:
+        >>> approval_user = get_user_for_approval(purchase_request, user=current_user)
+        >>> if approval_user:
+        ...     steps = build_approval_steps(stage, approval_user)
+    """
+    if user:
+        return user
+
+    if hasattr(obj, "created_by") and obj.created_by:
+        return obj.created_by
+
+    if hasattr(obj, "started_by") and obj.started_by:
+        return obj.started_by
+
+    if attachment and hasattr(attachment, "started_by") and attachment.started_by:
+        return attachment.started_by
+
+    logger.warning(
+        ERROR_MESSAGES["no_user_for_approval"].format(
+            obj_label=obj._meta.label, obj_pk=obj.pk
+        )
+    )
+    return None
 
 
 def get_workflow_stage_approvers(stage, created_by_user: User) -> List[Dict[str, Any]]:
@@ -50,16 +97,30 @@ def get_workflow_stage_approvers(stage, created_by_user: User) -> List[Dict[str,
     return approvals
 
 
-def build_approval_steps(stage, created_by_user: User) -> List[Dict[str, Any]]:
+def build_approval_steps(
+    stage, created_by_user: Optional[User]
+) -> List[Dict[str, Any]]:
     """Build approval steps for a workflow stage with optimized batch queries.
 
     Args:
         stage: The Stage instance
-        created_by_user: The user who created the workflow item
+        created_by_user: The user who created the workflow item (can be None)
 
     Returns:
         List of approval step configurations
+
+    Raises:
+        ValueError: If created_by_user is None and required for approval steps
     """
+    if not created_by_user:
+        logger.error(
+            f"No user provided for building approval steps for stage {stage.id} ({stage.name_en}). "
+            "This will cause issues with user-based approvals."
+        )
+        # Return empty list instead of proceeding with None user
+        # This prevents cascading errors in approval flow creation
+        return []
+
     approvals = get_workflow_stage_approvers(stage, created_by_user)
     steps = []
 

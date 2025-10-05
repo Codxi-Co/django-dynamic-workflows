@@ -1,0 +1,261 @@
+# Arabic translations for django-workflow-engine
+# Copyright (C) 2025
+# This file is distributed under the same license as the django-workflow-engine package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: 1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-01-04 12:00+0000\n"
+"PO-Revision-Date: 2025-01-04 12:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: Arabic\n"
+"Language: ar\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=6; plural=n==0 ? 0 : n==1 ? 1 : n==2 ? 2 : n%100>=3 && n%100<=10 ? 3 : n%100>=11 && n%100<=99 ? 4 : 5;\n"
+
+# Approval Types
+msgid "Role-based Approval"
+msgstr "موافقة على أساس الدور"
+
+msgid "User-specific Approval"
+msgstr "موافقة مستخدم محدد"
+
+msgid "Self Approval"
+msgstr "موافقة ذاتية"
+
+msgid "Team Head Approval"
+msgstr "موافقة رئيس الفريق"
+
+msgid "Department Head Approval"
+msgstr "موافقة رئيس القسم"
+
+# Role Selection Strategies
+msgid "Any user with role can approve"
+msgstr "أي مستخدم لديه الدور يمكنه الموافقة"
+
+msgid "All users with role must approve"
+msgstr "يجب على جميع المستخدمين ذوي الدور الموافقة"
+
+msgid "Rotate approval among role users"
+msgstr "تناوب الموافقة بين مستخدمي الدور"
+
+# Error Messages
+msgid "No workflow attached to {obj_label}({obj_pk}). Use attach_workflow_to_object() to attach a workflow first."
+msgstr "لا يوجد تدفق عمل مرفق بـ {obj_label}({obj_pk}). استخدم attach_workflow_to_object() لإرفاق تدفق عمل أولاً."
+
+msgid "Workflow is not in progress (status: {status}). Current status must be 'in_progress' to perform this action."
+msgstr "تدفق العمل ليس قيد التنفيذ (الحالة: {status}). يجب أن تكون الحالة الحالية 'قيد التنفيذ' لتنفيذ هذا الإجراء."
+
+msgid "Workflow '{workflow_name}' has no pipelines. Add at least one pipeline with stages to use this workflow."
+msgstr "تدفق العمل '{workflow_name}' لا يحتوي على خطوط أنابيب. أضف خط أنابيب واحد على الأقل مع مراحل لاستخدام تدفق العمل هذا."
+
+msgid "Pipeline '{pipeline_name}' has no stages. Add at least one stage with approvals to use this pipeline."
+msgstr "خط الأنابيب '{pipeline_name}' لا يحتوي على مراحل. أضف مرحلة واحدة على الأقل مع الموافقات لاستخدام خط الأنابيب هذا."
+
+msgid "No next stage found, completing workflow for {obj_label}({obj_pk})"
+msgstr "لم يتم العثور على المرحلة التالية، جار إتمام تدفق العمل لـ {obj_label}({obj_pk})"
+
+msgid "No current pipeline found for attachment {attachment_id}, cannot determine next stage"
+msgstr "لم يتم العثور على خط أنابيب حالي للمرفق {attachment_id}، لا يمكن تحديد المرحلة التالية"
+
+msgid "No user found for building approval steps for {obj_label}({obj_pk}), this may cause issues with approval flow"
+msgstr "لم يتم العثور على مستخدم لبناء خطوات الموافقة لـ {obj_label}({obj_pk})، قد يتسبب هذا في مشاكل مع تدفق الموافقة"
+
+msgid "Workflow already started (status: {status}). Cannot start a workflow that is already in progress."
+msgstr "تدفق العمل بدأ بالفعل (الحالة: {status}). لا يمكن بدء تدفق عمل قيد التنفيذ بالفعل."
+
+msgid "Workflow '{workflow_name}' is not active and cannot be attached. Please activate the workflow before attaching it to objects."
+msgstr "تدفق العمل '{workflow_name}' غير نشط ولا يمكن إرفاقه. يرجى تنشيط تدفق العمل قبل إرفاقه بالكائنات."
+
+# Log Messages
+msgid "Workflow created - ID: {workflow_id}, Name: {name}, Pipelines: {pipeline_count}"
+msgstr "تم إنشاء تدفق العمل - المعرف: {workflow_id}، الاسم: {name}، خطوط الأنابيب: {pipeline_count}"
+
+msgid "Pipeline created - ID: {pipeline_id}, Workflow: {workflow_name}, Stages: {stage_count}"
+msgstr "تم إنشاء خط الأنابيب - المعرف: {pipeline_id}، تدفق العمل: {workflow_name}، المراحل: {stage_count}"
+
+msgid "Workflow started for {obj_label}({obj_pk}) at stage '{stage_name}'"
+msgstr "بدأ تدفق العمل لـ {obj_label}({obj_pk}) في المرحلة '{stage_name}'"
+
+msgid "Workflow completed for {obj_label}({obj_pk})"
+msgstr "اكتمل تدفق العمل لـ {obj_label}({obj_pk})"
+
+msgid "Moved {obj_label}({obj_pk}) from stage '{from_stage}' to '{to_stage}'"
+msgstr "تم نقل {obj_label}({obj_pk}) من المرحلة '{from_stage}' إلى '{to_stage}'"
+
+msgid "Pipeline changed from '{from_pipeline}' to '{to_pipeline}'"
+msgstr "تم تغيير خط الأنابيب من '{from_pipeline}' إلى '{to_pipeline}'"
+
+msgid "Starting approval flow for stage '{stage_name}' with {step_count} steps"
+msgstr "بدء تدفق الموافقة للمرحلة '{stage_name}' بـ {step_count} خطوات"
+
+msgid "No approval steps generated for stage '{stage_name}', workflow may be stuck"
+msgstr "لم يتم إنشاء خطوات موافقة للمرحلة '{stage_name}'، قد يكون تدفق العمل عالقاً"
+
+# Model Field Labels
+msgid "English name"
+msgstr "الاسم بالإنجليزية"
+
+msgid "Arabic name"
+msgstr "الاسم بالعربية"
+
+msgid "Company/Organization user that owns this workflow"
+msgstr "مستخدم الشركة/المنظمة التي تملك تدفق العمل هذا"
+
+msgid "Status of the workflow"
+msgstr "حالة تدفق العمل"
+
+msgid "Status"
+msgstr "الحالة"
+
+msgid "Workflow description"
+msgstr "وصف تدفق العمل"
+
+msgid "Description"
+msgstr "الوصف"
+
+msgid "Whether this workflow is active and can be used"
+msgstr "ما إذا كان تدفق العمل هذا نشطاً ويمكن استخدامه"
+
+msgid "Is Active"
+msgstr "نشط"
+
+msgid "Whether this workflow is hidden (true for cloned workflows)"
+msgstr "ما إذا كان تدفق العمل هذا مخفياً (صحيح لتدفقات العمل المستنسخة)"
+
+msgid "Is Hidden"
+msgstr "مخفي"
+
+msgid "Content type of the department model"
+msgstr "نوع محتوى نموذج القسم"
+
+msgid "ID of the department object"
+msgstr "معرف كائن القسم"
+
+msgid "Order of this pipeline in the workflow"
+msgstr "ترتيب خط الأنابيب هذا في تدفق العمل"
+
+msgid "Whether this pipeline is hidden (true for cloned pipelines)"
+msgstr "ما إذا كان خط الأنابيب هذا مخفياً (صحيح لخطوط الأنابيب المستنسخة)"
+
+msgid "Form configuration for this stage"
+msgstr "تكوين النموذج لهذه المرحلة"
+
+msgid "Stage configuration including approvals"
+msgstr "تكوين المرحلة بما في ذلك الموافقات"
+
+msgid "Order of this stage in the pipeline"
+msgstr "ترتيب هذه المرحلة في خط الأنابيب"
+
+msgid "Whether this stage is hidden (true for cloned stages)"
+msgstr "ما إذا كانت هذه المرحلة مخفية (صحيح للمراحل المستنسخة)"
+
+msgid "The model type this workflow is attached to"
+msgstr "نوع النموذج المرفق به تدفق العمل هذا"
+
+msgid "The ID of the model instance"
+msgstr "معرف مثيل النموذج"
+
+msgid "Current stage in the workflow progression"
+msgstr "المرحلة الحالية في تقدم تدفق العمل"
+
+msgid "Current pipeline in the workflow progression"
+msgstr "خط الأنابيب الحالي في تقدم تدفق العمل"
+
+msgid "Current status of workflow execution"
+msgstr "الحالة الحالية لتنفيذ تدفق العمل"
+
+msgid "Additional metadata for workflow execution"
+msgstr "بيانات تعريف إضافية لتنفيذ تدفق العمل"
+
+# Choices
+msgid "Active"
+msgstr "نشط"
+
+msgid "Inactive"
+msgstr "غير نشط"
+
+msgid "Draft"
+msgstr "مسودة"
+
+msgid "Self Approved"
+msgstr "موافقة ذاتية"
+
+msgid "Role"
+msgstr "دور"
+
+msgid "User"
+msgstr "مستخدم"
+
+msgid "Team Head"
+msgstr "رئيس الفريق"
+
+msgid "Department Head"
+msgstr "رئيس القسم"
+
+msgid "Not Started"
+msgstr "لم يبدأ"
+
+msgid "In Progress"
+msgstr "قيد التنفيذ"
+
+msgid "Completed"
+msgstr "مكتمل"
+
+msgid "Rejected"
+msgstr "مرفوض"
+
+msgid "Cancelled"
+msgstr "ملغى"
+
+msgid "After Approval"
+msgstr "بعد الموافقة"
+
+msgid "After Rejection"
+msgstr "بعد الرفض"
+
+msgid "After Resubmission"
+msgstr "بعد إعادة التقديم"
+
+msgid "After Delegation"
+msgstr "بعد التفويض"
+
+msgid "After Move Stage"
+msgstr "بعد نقل المرحلة"
+
+msgid "After Move Pipeline"
+msgstr "بعد نقل خط الأنابيب"
+
+msgid "On Workflow Start"
+msgstr "عند بدء تدفق العمل"
+
+msgid "On Workflow Complete"
+msgstr "عند اكتمال تدفق العمل"
+
+# Model Verbose Names
+msgid "Workflow"
+msgstr "تدفق العمل"
+
+msgid "Workflows"
+msgstr "تدفقات العمل"
+
+msgid "Workflow Configuration"
+msgstr "تكوين تدفق العمل"
+
+msgid "Workflow Configurations"
+msgstr "تكوينات تدفق العمل"
+
+msgid "Workflow Action"
+msgstr "إجراء تدفق العمل"
+
+msgid "Workflow Actions"
+msgstr "إجراءات تدفق العمل"
+
+msgid "The original object this was cloned from"
+msgstr "الكائن الأصلي الذي تم استنساخ هذا منه"
+
+msgid "Cloned From"
+msgstr "مستنسخ من"

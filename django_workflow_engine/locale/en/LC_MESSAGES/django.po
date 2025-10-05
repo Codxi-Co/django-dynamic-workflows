@@ -1,0 +1,261 @@
+# English translations for django-workflow-engine
+# Copyright (C) 2025
+# This file is distributed under the same license as the django-workflow-engine package.
+#
+msgid ""
+msgstr ""
+"Project-Id-Version: 1.0\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2025-01-04 12:00+0000\n"
+"PO-Revision-Date: 2025-01-04 12:00+0000\n"
+"Last-Translator: \n"
+"Language-Team: English\n"
+"Language: en\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# Approval Types
+msgid "Role-based Approval"
+msgstr "Role-based Approval"
+
+msgid "User-specific Approval"
+msgstr "User-specific Approval"
+
+msgid "Self Approval"
+msgstr "Self Approval"
+
+msgid "Team Head Approval"
+msgstr "Team Head Approval"
+
+msgid "Department Head Approval"
+msgstr "Department Head Approval"
+
+# Role Selection Strategies
+msgid "Any user with role can approve"
+msgstr "Any user with role can approve"
+
+msgid "All users with role must approve"
+msgstr "All users with role must approve"
+
+msgid "Rotate approval among role users"
+msgstr "Rotate approval among role users"
+
+# Error Messages
+msgid "No workflow attached to {obj_label}({obj_pk}). Use attach_workflow_to_object() to attach a workflow first."
+msgstr "No workflow attached to {obj_label}({obj_pk}). Use attach_workflow_to_object() to attach a workflow first."
+
+msgid "Workflow is not in progress (status: {status}). Current status must be 'in_progress' to perform this action."
+msgstr "Workflow is not in progress (status: {status}). Current status must be 'in_progress' to perform this action."
+
+msgid "Workflow '{workflow_name}' has no pipelines. Add at least one pipeline with stages to use this workflow."
+msgstr "Workflow '{workflow_name}' has no pipelines. Add at least one pipeline with stages to use this workflow."
+
+msgid "Pipeline '{pipeline_name}' has no stages. Add at least one stage with approvals to use this pipeline."
+msgstr "Pipeline '{pipeline_name}' has no stages. Add at least one stage with approvals to use this pipeline."
+
+msgid "No next stage found, completing workflow for {obj_label}({obj_pk})"
+msgstr "No next stage found, completing workflow for {obj_label}({obj_pk})"
+
+msgid "No current pipeline found for attachment {attachment_id}, cannot determine next stage"
+msgstr "No current pipeline found for attachment {attachment_id}, cannot determine next stage"
+
+msgid "No user found for building approval steps for {obj_label}({obj_pk}), this may cause issues with approval flow"
+msgstr "No user found for building approval steps for {obj_label}({obj_pk}), this may cause issues with approval flow"
+
+msgid "Workflow already started (status: {status}). Cannot start a workflow that is already in progress."
+msgstr "Workflow already started (status: {status}). Cannot start a workflow that is already in progress."
+
+msgid "Workflow '{workflow_name}' is not active and cannot be attached. Please activate the workflow before attaching it to objects."
+msgstr "Workflow '{workflow_name}' is not active and cannot be attached. Please activate the workflow before attaching it to objects."
+
+# Log Messages
+msgid "Workflow created - ID: {workflow_id}, Name: {name}, Pipelines: {pipeline_count}"
+msgstr "Workflow created - ID: {workflow_id}, Name: {name}, Pipelines: {pipeline_count}"
+
+msgid "Pipeline created - ID: {pipeline_id}, Workflow: {workflow_name}, Stages: {stage_count}"
+msgstr "Pipeline created - ID: {pipeline_id}, Workflow: {workflow_name}, Stages: {stage_count}"
+
+msgid "Workflow started for {obj_label}({obj_pk}) at stage '{stage_name}'"
+msgstr "Workflow started for {obj_label}({obj_pk}) at stage '{stage_name}'"
+
+msgid "Workflow completed for {obj_label}({obj_pk})"
+msgstr "Workflow completed for {obj_label}({obj_pk})"
+
+msgid "Moved {obj_label}({obj_pk}) from stage '{from_stage}' to '{to_stage}'"
+msgstr "Moved {obj_label}({obj_pk}) from stage '{from_stage}' to '{to_stage}'"
+
+msgid "Pipeline changed from '{from_pipeline}' to '{to_pipeline}'"
+msgstr "Pipeline changed from '{from_pipeline}' to '{to_pipeline}'"
+
+msgid "Starting approval flow for stage '{stage_name}' with {step_count} steps"
+msgstr "Starting approval flow for stage '{stage_name}' with {step_count} steps"
+
+msgid "No approval steps generated for stage '{stage_name}', workflow may be stuck"
+msgstr "No approval steps generated for stage '{stage_name}', workflow may be stuck"
+
+# Model Field Labels
+msgid "English name"
+msgstr "English name"
+
+msgid "Arabic name"
+msgstr "Arabic name"
+
+msgid "Company/Organization user that owns this workflow"
+msgstr "Company/Organization user that owns this workflow"
+
+msgid "Status of the workflow"
+msgstr "Status of the workflow"
+
+msgid "Status"
+msgstr "Status"
+
+msgid "Workflow description"
+msgstr "Workflow description"
+
+msgid "Description"
+msgstr "Description"
+
+msgid "Whether this workflow is active and can be used"
+msgstr "Whether this workflow is active and can be used"
+
+msgid "Is Active"
+msgstr "Is Active"
+
+msgid "Whether this workflow is hidden (true for cloned workflows)"
+msgstr "Whether this workflow is hidden (true for cloned workflows)"
+
+msgid "Is Hidden"
+msgstr "Is Hidden"
+
+msgid "Content type of the department model"
+msgstr "Content type of the department model"
+
+msgid "ID of the department object"
+msgstr "ID of the department object"
+
+msgid "Order of this pipeline in the workflow"
+msgstr "Order of this pipeline in the workflow"
+
+msgid "Whether this pipeline is hidden (true for cloned pipelines)"
+msgstr "Whether this pipeline is hidden (true for cloned pipelines)"
+
+msgid "Form configuration for this stage"
+msgstr "Form configuration for this stage"
+
+msgid "Stage configuration including approvals"
+msgstr "Stage configuration including approvals"
+
+msgid "Order of this stage in the pipeline"
+msgstr "Order of this stage in the pipeline"
+
+msgid "Whether this stage is hidden (true for cloned stages)"
+msgstr "Whether this stage is hidden (true for cloned stages)"
+
+msgid "The model type this workflow is attached to"
+msgstr "The model type this workflow is attached to"
+
+msgid "The ID of the model instance"
+msgstr "The ID of the model instance"
+
+msgid "Current stage in the workflow progression"
+msgstr "Current stage in the workflow progression"
+
+msgid "Current pipeline in the workflow progression"
+msgstr "Current pipeline in the workflow progression"
+
+msgid "Current status of workflow execution"
+msgstr "Current status of workflow execution"
+
+msgid "Additional metadata for workflow execution"
+msgstr "Additional metadata for workflow execution"
+
+# Choices
+msgid "Active"
+msgstr "Active"
+
+msgid "Inactive"
+msgstr "Inactive"
+
+msgid "Draft"
+msgstr "Draft"
+
+msgid "Self Approved"
+msgstr "Self Approved"
+
+msgid "Role"
+msgstr "Role"
+
+msgid "User"
+msgstr "User"
+
+msgid "Team Head"
+msgstr "Team Head"
+
+msgid "Department Head"
+msgstr "Department Head"
+
+msgid "Not Started"
+msgstr "Not Started"
+
+msgid "In Progress"
+msgstr "In Progress"
+
+msgid "Completed"
+msgstr "Completed"
+
+msgid "Rejected"
+msgstr "Rejected"
+
+msgid "Cancelled"
+msgstr "Cancelled"
+
+msgid "After Approval"
+msgstr "After Approval"
+
+msgid "After Rejection"
+msgstr "After Rejection"
+
+msgid "After Resubmission"
+msgstr "After Resubmission"
+
+msgid "After Delegation"
+msgstr "After Delegation"
+
+msgid "After Move Stage"
+msgstr "After Move Stage"
+
+msgid "After Move Pipeline"
+msgstr "After Move Pipeline"
+
+msgid "On Workflow Start"
+msgstr "On Workflow Start"
+
+msgid "On Workflow Complete"
+msgstr "On Workflow Complete"
+
+# Model Verbose Names
+msgid "Workflow"
+msgstr "Workflow"
+
+msgid "Workflows"
+msgstr "Workflows"
+
+msgid "Workflow Configuration"
+msgstr "Workflow Configuration"
+
+msgid "Workflow Configurations"
+msgstr "Workflow Configurations"
+
+msgid "Workflow Action"
+msgstr "Workflow Action"
+
+msgid "Workflow Actions"
+msgstr "Workflow Actions"
+
+msgid "The original object this was cloned from"
+msgstr "The original object this was cloned from"
+
+msgid "Cloned From"
+msgstr "Cloned From"

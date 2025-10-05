@@ -20,6 +20,7 @@ from .choices import (
     ApprovalTypes,
     WorkflowAttachmentStatus,
 )
+from .constants import ERROR_MESSAGES, LOG_MESSAGES
 from .models import (
     Pipeline,
     Stage,
@@ -260,7 +261,7 @@ def attach_workflow_to_object(
 
     if not workflow.is_active:
         raise ValueError(
-            f"Workflow '{workflow.name_en}' is not active and cannot be attached"
+            ERROR_MESSAGES["workflow_inactive"].format(workflow_name=workflow.name_en)
         )
 
     # Clone the workflow to ensure immutability (unless disabled)
@@ -354,16 +355,24 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
         raise ValueError(f"No workflow attached to {obj._meta.label}({obj.pk})")
 
     if attachment.status != WorkflowAttachmentStatus.NOT_STARTED:
-        raise ValueError(f"Workflow already started (status: {attachment.status})")
+        raise ValueError(
+            ERROR_MESSAGES["workflow_already_started"].format(status=attachment.status)
+        )
 
     # Get first stage (data already prefetched)
     first_pipeline = attachment.workflow.pipelines.order_by("order").first()
     if not first_pipeline:
-        raise ValueError(f"Workflow '{attachment.workflow.name_en}' has no pipelines")
+        raise ValueError(
+            ERROR_MESSAGES["no_pipelines"].format(
+                workflow_name=attachment.workflow.name_en
+            )
+        )
 
     first_stage = first_pipeline.stages.order_by("order").first()
     if not first_stage:
-        raise ValueError(f"Pipeline '{first_pipeline.name_en}' has no stages")
+        raise ValueError(
+            ERROR_MESSAGES["no_stages"].format(pipeline_name=first_pipeline.name_en)
+        )
 
     # Update attachment
     attachment.status = WorkflowAttachmentStatus.IN_PROGRESS
@@ -381,11 +390,24 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
     # Start approval flow for first stage
     from approval_workflow.services import start_flow
 
-    from .utils import build_approval_steps
+    from .constants import LOG_MESSAGES
+    from .utils import build_approval_steps, get_user_for_approval
 
-    steps = build_approval_steps(first_stage, user or obj.created_by)
+    # Get user for approval steps using centralized utility
+    approval_user = get_user_for_approval(obj, user, attachment)
+
+    steps = build_approval_steps(first_stage, approval_user)
     if steps:
+        logger.info(
+            LOG_MESSAGES["approval_flow_started"].format(
+                stage_name=first_stage.name_en, step_count=len(steps)
+            )
+        )
         start_flow(obj, steps)
+    else:
+        logger.warning(
+            LOG_MESSAGES["no_approval_steps"].format(stage_name=first_stage.name_en)
+        )
 
     logger.info(
         f"Workflow started for {obj._meta.label}({obj.pk}) at stage '{first_stage.name_en}'"
@@ -416,22 +438,35 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
             content_type=content_type, object_id=str(obj.pk)
         )
     except WorkflowAttachment.DoesNotExist:
-        raise ValueError(f"No workflow attached to {obj._meta.label}({obj.pk})")
+        raise ValueError(
+            ERROR_MESSAGES["no_workflow_attached"].format(
+                obj_label=obj._meta.label, obj_pk=obj.pk
+            )
+        )
 
     if attachment.status != WorkflowAttachmentStatus.IN_PROGRESS:
-        raise ValueError(f"Workflow not in progress (status: {attachment.status})")
+        raise ValueError(
+            ERROR_MESSAGES["workflow_not_in_progress"].format(status=attachment.status)
+        )
 
     current_stage = attachment.current_stage
     next_stage = attachment.next_stage
 
     if not next_stage:
         # Workflow complete
+        logger.info(
+            ERROR_MESSAGES["no_next_stage"].format(
+                obj_label=obj._meta.label, obj_pk=obj.pk
+            )
+        )
         return complete_workflow(obj, user)
 
     # Check if moving to new pipeline
     current_pipeline = attachment.current_pipeline
     next_pipeline = next_stage.pipeline
-    pipeline_changed = current_pipeline.id != next_pipeline.id
+    pipeline_changed = (
+        current_pipeline and next_pipeline and current_pipeline.id != next_pipeline.id
+    )
 
     # Update attachment
     old_stage = attachment.current_stage
@@ -441,9 +476,17 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
     attachment.current_pipeline = next_pipeline
     attachment.save()
 
+    logger.debug(
+        f"Moving {obj._meta.label}({obj.pk}) from stage '{old_stage.name_en if old_stage else 'None'}' "
+        f"to '{next_stage.name_en}' (pipeline: {next_pipeline.name_en if next_pipeline else 'None'})"
+    )
+
     # Trigger workflow actions
     if pipeline_changed:
         # Trigger pipeline move actions
+        logger.info(
+            f"Pipeline changed from '{old_pipeline.name_en}' to '{next_pipeline.name_en}'"
+        )
         trigger_workflow_event(
             attachment,
             ActionType.AFTER_MOVE_PIPELINE,
@@ -464,14 +507,32 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
     # Start approval flow for next stage
     from approval_workflow.services import start_flow
 
-    from .utils import build_approval_steps
+    from .constants import LOG_MESSAGES
+    from .utils import build_approval_steps, get_user_for_approval
 
-    steps = build_approval_steps(next_stage, user or obj.created_by)
+    # Get user for approval steps using centralized utility
+    approval_user = get_user_for_approval(obj, user, attachment)
+
+    steps = build_approval_steps(next_stage, approval_user)
     if steps:
+        logger.info(
+            LOG_MESSAGES["approval_flow_started"].format(
+                stage_name=next_stage.name_en, step_count=len(steps)
+            )
+        )
         start_flow(obj, steps)
+    else:
+        logger.warning(
+            LOG_MESSAGES["no_approval_steps"].format(stage_name=next_stage.name_en)
+        )
 
     logger.info(
-        f"Moved {obj._meta.label}({obj.pk}) from stage '{old_stage.name_en}' to '{next_stage.name_en}'"
+        LOG_MESSAGES["stage_moved"].format(
+            obj_label=obj._meta.label,
+            obj_pk=obj.pk,
+            from_stage=old_stage.name_en,
+            to_stage=next_stage.name_en,
+        )
     )
 
     return attachment
@@ -548,6 +609,8 @@ def complete_workflow(obj: Model, user: User = None) -> WorkflowAttachment:
     # Update attachment
     attachment.status = WorkflowAttachmentStatus.COMPLETED
     attachment.completed_at = timezone.now()
+    attachment.current_stage = None
+    attachment.current_pipeline = None
     attachment.save()
 
     # Trigger workflow complete actions

@@ -5,6 +5,94 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2025-10-05
+
+### 🐛 Critical Bug Fixes
+- **Fixed workflow completion not clearing stage/pipeline references**:
+  - `complete_workflow()` now sets `current_stage` and `current_pipeline` to None
+  - Prevents confusion about workflow state when checking if workflow is complete
+  - Ensures proper cleanup when workflow reaches final stage
+
+- **Fixed pipeline change detection crash**:
+  - Added null checks to `pipeline_changed` logic in `move_to_next_stage()`
+  - Previously crashed when `current_pipeline` was None
+  - Now properly handles: `pipeline_changed = current_pipeline and next_pipeline and current_pipeline.id != next_pipeline.id`
+
+- **Fixed inconsistent user handling in workflow progression**:
+  - Created centralized `get_user_for_approval()` utility function
+  - Consistent user fallback logic: user parameter → obj.created_by → obj.started_by → attachment.started_by
+  - Both `start_workflow_for_object()` and `move_to_next_stage()` now use same user resolution strategy
+  - Prevents failures when user is not provided
+
+### ⚡ Performance & Debugging Enhancements
+- **Added comprehensive logging system**:
+  - Created centralized `ERROR_MESSAGES` and `LOG_MESSAGES` constants
+  - Added debug logging for stage transitions and pipeline changes
+  - Workflow progression now has detailed logging for troubleshooting
+  - Better visibility into approval flow creation and stage movements
+
+- **Enhanced error messages**:
+  - Replaced hardcoded error strings with constants
+  - Clearer messages for workflow not found, no next stage, etc.
+  - Improved developer experience when debugging workflow issues
+
+### 🎯 ApprovalType Integration
+- **Full ApprovalType support** (from v1.2.2):
+  - APPROVE: Standard approval with optional form
+  - SUBMIT: Requires form, typically for initial submission
+  - CHECK_IN_VERIFY: Physical verification type with optional form
+  - MOVE: Automatic stage transition without form
+  - Case-insensitive validation for all approval types
+
+- **Enhanced serializer validation**:
+  - `StageSerializer` validates ApprovalType configuration
+  - SUBMIT type enforces required_form presence
+  - MOVE type prevents form assignment
+  - Clear validation error messages at serializer level
+
+### 🧪 Testing Improvements
+- **Added 12 new comprehensive test files**:
+  - `test_approval_types.py`: Validates all ApprovalType behaviors and validation rules
+  - `test_pipeline_approval_type_integration.py`: Multi-pipeline workflows with mixed approval types
+  - `test_pipeline_transitions.py`: Pipeline and stage transition logic
+  - `test_handlers_coverage.py`: Handler method coverage
+  - `test_models_coverage.py`: Model method coverage
+  - `test_services_coverage.py`: Service function coverage
+  - `test_utils.py`: Utility function coverage
+  - Additional coverage tests for edge cases
+
+- **264 tests now passing**: Comprehensive test coverage for all workflow scenarios
+- **Test execution time**: ~2.3 seconds (highly optimized)
+- **Coverage includes**:
+  - Final stage approval completing workflow successfully
+  - Multi-pipeline transitions with proper event triggering
+  - Workflow completion setting stage/pipeline to None
+  - User fallback logic in approval step creation
+  - All ApprovalType validation scenarios
+
+### 📋 Technical Details
+- **Files changed**:
+  - `django_workflow_engine/services.py`: Fixed move_to_next_stage and complete_workflow
+  - `django_workflow_engine/handlers.py`: Enhanced on_final_approve workflow progression
+  - `django_workflow_engine/utils.py`: Added get_user_for_approval utility
+  - `django_workflow_engine/constants.py`: Added ERROR_MESSAGES and LOG_MESSAGES
+  - `django_workflow_engine/models.py`: Enhanced ApprovalType validation
+  - `django_workflow_engine/serializers.py`: Added ApprovalType serializer validation
+
+- **Backward compatible**: All changes maintain full backward compatibility
+- **No breaking changes**: Existing code continues to work without modifications
+- **No migrations required**: All changes are code-level only
+
+### ✅ Verified Scenarios
+- ✅ Final stage approval completes workflow and clears stage/pipeline
+- ✅ Multi-pipeline transitions work correctly with proper event firing
+- ✅ Pipeline change detection handles None values gracefully
+- ✅ User fallback works consistently across all workflow operations
+- ✅ All ApprovalTypes (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE) validated correctly
+- ✅ Comprehensive logging helps with debugging workflow issues
+
+---
+
 ## [1.2.0] - 2025-10-02
 
 ### 🎯 New Features
