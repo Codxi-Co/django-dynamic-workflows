@@ -504,8 +504,9 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
         user=user,
     )
 
-    # Start approval flow for next stage
-    from approval_workflow.services import start_flow
+    # Extend approval flow for next stage
+    from approval_workflow.models import ApprovalFlow
+    from approval_workflow.services import extend_flow
 
     from .constants import LOG_MESSAGES
     from .utils import build_approval_steps, get_user_for_approval
@@ -515,12 +516,42 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
 
     steps = build_approval_steps(next_stage, approval_user)
     if steps:
-        logger.info(
-            LOG_MESSAGES["approval_flow_started"].format(
-                stage_name=next_stage.name_en, step_count=len(steps)
+        # Get existing approval flow for this object
+        from django.contrib.contenttypes.models import ContentType
+
+        content_type = ContentType.objects.get_for_model(obj)
+        try:
+            flow = ApprovalFlow.objects.get(
+                content_type=content_type, object_id=str(obj.pk)
             )
-        )
-        start_flow(obj, steps)
+
+            # Get the highest existing step number to continue numbering
+            existing_instances = flow.instances.all()
+            max_step = (
+                max([inst.step_number for inst in existing_instances])
+                if existing_instances
+                else 0
+            )
+
+            # Update step numbers to continue from the last step
+            for step_data in steps:
+                step_data["step"] = max_step + step_data["step"]
+
+            # Extend the existing flow instead of creating a new one
+            extend_flow(flow, steps)
+
+            logger.info(
+                LOG_MESSAGES["approval_flow_started"].format(
+                    stage_name=next_stage.name_en, step_count=len(steps)
+                )
+                + f" (steps {max_step + 1} onwards)"
+            )
+        except ApprovalFlow.DoesNotExist:
+            # This shouldn't happen, but fall back to logging an error
+            logger.error(
+                f"No existing approval flow found for {obj._meta.label}({obj.pk}). "
+                "Cannot extend flow for next stage."
+            )
     else:
         logger.warning(
             LOG_MESSAGES["no_approval_steps"].format(stage_name=next_stage.name_en)

@@ -5,6 +5,93 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.4] - 2025-10-05
+
+### 🚀 Major Enhancement: Zero-Configuration Workflow Progression
+
+**The Big Win**: Developers no longer need to create custom approval handlers! The package now handles everything automatically.
+
+#### What Changed
+
+- **Eliminated UNIQUE constraint violations**: `move_to_next_stage()` now uses `extend_flow()` instead of `start_flow()`
+- **Automatic workflow progression**: Built-in `WorkflowApprovalHandler` handles stage transitions seamlessly
+- **No manual handler registration needed**: Handler auto-detects when workflow is attached to an object
+
+#### Before (Manual Handler Required)
+
+Previously, developers had to create custom approval handlers like this:
+
+```python
+# OLD WAY - Required custom handler in your project
+class OpportunityApprovalHandler(BaseApprovalHandler):
+    def on_final_approve(self, approval_instance):
+        # Manually update WorkflowAttachment
+        # Manually extend approval flow
+        # Manually handle step numbering
+        # ~120 lines of boilerplate code
+```
+
+And register it in settings:
+```python
+APPROVAL_HANDLERS = [
+    "myapp.approval.OpportunityApprovalHandler",
+]
+```
+
+#### After (Zero Configuration)
+
+Now, just attach a workflow and everything works automatically:
+
+```python
+# NEW WAY - Just attach and go!
+from django_workflow_engine.services import attach_workflow_to_object
+
+# That's it! No custom handlers needed
+attachment = attach_workflow_to_object(
+    obj=opportunity,
+    workflow=workflow,
+    user=request.user,
+    auto_start=True
+)
+
+# Approvals automatically progress through stages
+# Pipeline transitions happen seamlessly
+# Workflow completes when reaching final stage
+```
+
+### 🔧 Technical Improvements
+
+- **Fixed ApprovalFlow.DoesNotExist error**: Using `extend_flow()` prevents UNIQUE constraint violations
+- **Proper step numbering**: New approval steps continue from the last step number
+- **Enhanced logging**: Added detailed logs for flow extension operations
+- **Seamless flow continuation**: Single approval flow spans all stages and pipelines
+
+### 📋 Files Changed
+
+- `django_workflow_engine/services.py`: Updated `move_to_next_stage()` to use `extend_flow()`
+- `tests/test_services.py`: Updated test to mock `extend_flow()` instead of `start_flow()`
+- Dependency: Now requires `django-approval-workflow>=0.8.4` for `extend_flow()` support
+
+### ✅ Migration Notes
+
+**No breaking changes!** Existing code continues to work.
+
+If you previously created custom approval handlers (like `OpportunityApprovalHandler`), you can now:
+1. Remove your custom handler class
+2. Remove the `APPROVAL_HANDLERS` setting
+3. Keep using `attach_workflow_to_object()` as before
+
+The built-in `WorkflowApprovalHandler` now handles everything automatically!
+
+### 🎯 What This Means for You
+
+- ✅ **Less boilerplate**: No need to write ~120 lines of handler code per model
+- ✅ **Fewer bugs**: Package handles all edge cases internally
+- ✅ **Easier maintenance**: Updates to workflow logic happen in the package, not your code
+- ✅ **Faster development**: Attach workflow → done!
+
+---
+
 ## [1.2.3] - 2025-10-05
 
 ### 🐛 Critical Bug Fixes

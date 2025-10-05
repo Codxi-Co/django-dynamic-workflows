@@ -171,9 +171,12 @@ class WorkflowServicesTest(TestCase):
         # Verify approval flow was started
         mock_start_flow.assert_called_once()
 
-    @patch("approval_workflow.services.start_flow")
+    @patch("approval_workflow.services.extend_flow")
+    @patch("approval_workflow.models.ApprovalFlow.objects.get")
     @patch("django_workflow_engine.utils.build_approval_steps")
-    def test_move_to_next_stage(self, mock_build_steps, mock_start_flow):
+    def test_move_to_next_stage(
+        self, mock_build_steps, mock_get_flow, mock_extend_flow
+    ):
         """Test moving to next stage in workflow."""
         # Setup attachment in progress
         attachment = attach_workflow_to_object(
@@ -184,13 +187,22 @@ class WorkflowServicesTest(TestCase):
         attachment.current_pipeline = self.pipeline
         attachment.save()
 
-        mock_build_steps.return_value = [{"step": 2}]
+        # Mock the approval flow and its instances
+        from unittest.mock import Mock
+
+        mock_flow = Mock()
+        mock_instance = Mock()
+        mock_instance.step_number = 1
+        mock_flow.instances.all.return_value = [mock_instance]
+        mock_get_flow.return_value = mock_flow
+
+        mock_build_steps.return_value = [{"step": 1}]
 
         # Move to next stage
         modified_attachment = move_to_next_stage(self.user, self.user)
 
         self.assertEqual(modified_attachment.current_stage, self.stage2)
-        mock_start_flow.assert_called_once()
+        mock_extend_flow.assert_called_once()
 
     def test_reject_workflow_stage(self):
         """Test rejecting workflow at current stage."""
