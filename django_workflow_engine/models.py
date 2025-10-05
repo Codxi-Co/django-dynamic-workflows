@@ -545,14 +545,37 @@ class WorkflowAttachment(models.Model):
     def __str__(self):
         return f"Workflow '{self.workflow.name_en}' attached to {self.content_type.model}({self.object_id})"
 
+    def save(self, *args, **kwargs):
+        """Override save to ensure current_pipeline is always in sync with current_stage."""
+        # Ensure current_pipeline is always in sync with current_stage
+        if self.current_stage and not self.current_pipeline:
+            self.current_pipeline = self.current_stage.pipeline
+            logger.debug(
+                f"Auto-syncing current_pipeline to {self.current_pipeline.name_en} "
+                f"based on current_stage {self.current_stage.name_en}"
+            )
+        elif self.current_stage and self.current_pipeline:
+            # Verify they're in sync
+            if self.current_stage.pipeline.id != self.current_pipeline.id:
+                logger.warning(
+                    f"current_pipeline ({self.current_pipeline.name_en}) does not match "
+                    f"current_stage.pipeline ({self.current_stage.pipeline.name_en}). "
+                    f"Syncing to current_stage.pipeline."
+                )
+                self.current_pipeline = self.current_stage.pipeline
+
+        super().save(*args, **kwargs)
+
     @property
     def progress_percentage(self):
         """Calculate workflow completion percentage."""
-        if not self.current_stage or self.status == "not_started":
-            return 0
-
+        # Check terminal states first (completed, rejected, cancelled)
         if self.status in ["completed", "rejected", "cancelled"]:
             return 100 if self.status == "completed" else 0
+
+        # Check if not started or no current stage
+        if not self.current_stage or self.status == "not_started":
+            return 0
 
         # Calculate based on current position
         total_stages = 0

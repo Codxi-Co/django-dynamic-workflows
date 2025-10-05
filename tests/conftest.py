@@ -26,6 +26,11 @@ def pytest_configure(config):
     # Disable workflow emails by default in tests
     settings.WORKFLOW_DISABLE_EMAILS = True
 
+    # Configure approval handlers for workflow progression
+    settings.APPROVAL_HANDLERS = [
+        "django_workflow_engine.handlers.WorkflowApprovalHandler",
+    ]
+
 
 @pytest.fixture(autouse=True)
 def mock_email_backend():

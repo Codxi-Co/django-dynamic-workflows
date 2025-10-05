@@ -260,13 +260,21 @@ class WorkflowApprovalSerializer(serializers.Serializer):
                 if action == ApprovalStatus.DELEGATED:
                     delegate_to_user = self._get_delegation_user(validated_data)
 
+                # Enrich form data with answer keys if form_data is provided
+                form_data = validated_data.get("form_data")
+                enriched_form_data = None
+                if form_data and attachment and attachment.current_stage:
+                    enriched_form_data = self._enrich_form_data(
+                        form_data, attachment.current_stage
+                    )
+
                 # Use approval_workflow's advance_flow to handle the action
                 advance_flow(
                     instance=self.instance,
                     action=action,
                     user=user,
                     comment=validated_data.get("reason", ""),
-                    form_data=validated_data.get("form_data"),
+                    form_data=enriched_form_data or form_data,
                     delegate_to=delegate_to_user,
                     resubmission_steps=resubmission_steps,
                 )
@@ -347,6 +355,48 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             return User.objects.get(pk=user_id)
         except User.DoesNotExist:
             raise ValueError(f"User with ID {user_id} not found")
+
+    def _enrich_form_data(self, form_data: dict, stage) -> list:
+        """Enrich form data with field specifications and answer keys.
+
+        This method flattens nested forms based on submitted data and enriches
+        each field with its answer, creating a structure like:
+        [
+            {"field_name": "budget", "field_type": "NUMBER", "answer": 50000},
+            {"field_name": "description", "field_type": "TEXT", "answer": "..."}
+        ]
+
+        Args:
+            form_data: The submitted form data dictionary
+            stage: The Stage instance with form_info
+
+        Returns:
+            List of enriched field specifications with answers
+        """
+        from .utils import enrich_answers, flatten_form_info
+
+        # Get the form_info from the stage
+        form_info = stage.form_info or []
+
+        if not form_info or not form_data:
+            return form_data
+
+        # Flatten nested forms based on submitted data
+        flattened_form_info = flatten_form_info(form_info, form_data)
+
+        # Enrich with answers
+        request = self.context.get("request")
+        object_id = getattr(self.instance, "pk", None)
+
+        enriched = enrich_answers(
+            flattened_form_info,
+            form_data,
+            request=request,
+            object_id=object_id,
+            save_files=True,
+        )
+
+        return enriched
 
     def _update_workflow_attachment(self, action, user=None):
         """Update workflow attachment status based on action."""

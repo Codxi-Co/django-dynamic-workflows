@@ -5,6 +5,24 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.5] - 2025-10-05
+
+### Fixed
+- **Progress Calculation**: Fixed `progress_percentage` returning 0 when workflow is completed. Now correctly returns 100% for completed workflows.
+- **Pipeline Synchronization**: Added automatic synchronization of `current_pipeline` with `current_stage.pipeline` to prevent inconsistencies.
+
+### Added
+- **Form Enrichment**: Added `flatten_form_info()` and `enrich_answers()` utilities for handling nested/conditional forms with proper answer key integration.
+- **Enhanced Tests**: Added comprehensive tests for:
+  - Form enrichment with nested forms (dropdown, multi-choice triggers)
+  - Progress calculation across single and multiple pipelines (16 new tests)
+  - Complete workflow flow from start to completion
+  - Pipeline movement and synchronization
+
+### Changed
+- WorkflowAttachment now auto-syncs `current_pipeline` on save to ensure data consistency
+- WorkflowApprovalSerializer now enriches form data with answer keys automatically
+
 ## [1.2.4] - 2025-10-05
 
 ### 🚀 Major Enhancement: Zero-Configuration Workflow Progression

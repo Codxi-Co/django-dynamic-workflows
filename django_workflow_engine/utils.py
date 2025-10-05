@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.core.files.storage import default_storage
+from django.core.files.uploadedfile import UploadedFile
 from django.db.models import Model
 
 from approval_workflow.choices import ApprovalType, RoleSelectionStrategy
@@ -317,3 +319,140 @@ def get_workflow_first_stage(workflow) -> Optional:
     if first_pipeline:
         return first_pipeline.stages.order_by("order").first()
     return None
+
+
+def flatten_form_info(form_info: List[Dict], submitted_data: dict) -> List[Dict]:
+    """
+    Recursively flatten form_info structure based on submitted answers.
+
+    This function handles nested/conditional forms where certain choices
+    trigger additional form fields to be displayed. It flattens the structure
+    based on what was actually submitted.
+
+    Args:
+        form_info: The form field specifications (can contain nested forms)
+        submitted_data: The submitted form data
+
+    Returns:
+        Flattened list of all field specifications that apply based on submitted data
+
+    Example:
+        form_info = [
+            {
+                "field_name": "department",
+                "field_type": "DROP_DOWN",
+                "extra_info": {
+                    "choice_form": {
+                        "choice": "IT",
+                        "form": {
+                            "field_name": "it_budget",
+                            "field_type": "NUMBER"
+                        }
+                    }
+                }
+            }
+        ]
+        submitted_data = {"department": "IT", "it_budget": 50000}
+        # Returns both department and it_budget fields flattened
+    """
+    flat_fields = []
+
+    for field in form_info:
+        flat_fields.append(field)
+        ftype = field.get("field_type")
+        extra_info = field.get("extra_info", {})
+
+        # Normalize in case extra_info is a list (e.g., ["Low", "High"])
+        if isinstance(extra_info, list):
+            continue
+
+        choice_form = extra_info.get("choice_form")
+        if not choice_form:
+            continue
+
+        trigger_choice = choice_form.get("choice")
+        submitted_value = submitted_data.get(field["field_name"])
+
+        # Determine if the conditional form should be triggered
+        should_trigger = (
+            ftype in ("MULTI_CHOICE", "CHECKBOX")
+            and trigger_choice in (submitted_value or [])
+        ) or (ftype == "DROP_DOWN" and trigger_choice == submitted_value)
+
+        if should_trigger:
+            subform = choice_form.get("form")
+            if subform:
+                # Recursively flatten nested forms
+                flat_fields.extend(flatten_form_info([subform], submitted_data))
+
+    return flat_fields
+
+
+def enrich_answers(
+    form_info: List[Dict],
+    answers: dict,
+    *,
+    request=None,
+    object_id: int = None,
+    save_files: bool = True,
+) -> List[Dict]:
+    """
+    Enrich form answers by combining field specifications with submitted values.
+
+    This function takes the form field definitions and the submitted answers,
+    and creates an enriched structure where each field spec includes the
+    submitted answer. It also handles file uploads by saving them and
+    converting to URLs.
+
+    Args:
+        form_info: List of form field specifications
+        answers: Dictionary of submitted answers {field_name: value}
+        request: Django request object (needed for building absolute URLs)
+        object_id: ID of the object these answers are for (used in file paths)
+        save_files: Whether to save uploaded files (default: True)
+
+    Returns:
+        List of enriched field specs with 'answer' key added to each
+
+    Example:
+        form_info = [
+            {"field_name": "name", "field_type": "TEXT"},
+            {"field_name": "budget", "field_type": "NUMBER"}
+        ]
+        answers = {"name": "Project Alpha", "budget": 50000}
+
+        # Returns:
+        # [
+        #     {"field_name": "name", "field_type": "TEXT", "answer": "Project Alpha"},
+        #     {"field_name": "budget", "field_type": "NUMBER", "answer": 50000}
+        # ]
+    """
+    enriched = []
+
+    for spec in form_info or []:
+        fname = spec["field_name"]
+        if fname not in answers:
+            continue
+
+        answer = answers[fname]
+
+        # If this is a file, save and generate full URL
+        if (
+            save_files
+            and spec.get("field_type") in ("FILE", "UPLOAD")
+            and isinstance(answer, UploadedFile)
+        ):
+            if object_id and request:
+                path = default_storage.save(
+                    f"workflows/{object_id}/{answer.name}", answer
+                )
+                relative_url = default_storage.url(path)
+                answer = request.build_absolute_uri(relative_url)
+            else:
+                logger.warning(
+                    f"Cannot save file for field '{fname}' - missing object_id or request"
+                )
+
+        enriched.append({**spec, "answer": answer})
+
+    return enriched
