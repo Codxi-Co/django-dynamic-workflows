@@ -139,7 +139,18 @@ INSTALLED_APPS = [
 python manage.py migrate
 ```
 
-3. Configure Approval Package Models:
+3. Register the built-in workflow handler:
+
+```python
+# settings.py
+APPROVAL_HANDLERS = [
+    "django_workflow_engine.handlers.WorkflowApprovalHandler",
+]
+```
+
+This enables automatic workflow progression when approvals are completed.
+
+4. Configure Approval Package Models:
 
 Django Dynamic Workflows is built on top of the `django-approval-workflow` package. You need to configure two essential models for the approval system to work:
 

@@ -38,15 +38,19 @@ APPROVAL_HANDLERS = [
 ]
 ```
 
-#### After (Zero Configuration)
+#### After (Simple Configuration)
 
-Now, just attach a workflow and everything works automatically:
+Now, just register the built-in handler and attach workflows:
 
 ```python
-# NEW WAY - Just attach and go!
+# settings.py - One-time setup
+APPROVAL_HANDLERS = [
+    "django_workflow_engine.handlers.WorkflowApprovalHandler",
+]
+
+# In your code - No custom handler code needed!
 from django_workflow_engine.services import attach_workflow_to_object
 
-# That's it! No custom handlers needed
 attachment = attach_workflow_to_object(
     obj=opportunity,
     workflow=workflow,
@@ -77,8 +81,14 @@ attachment = attach_workflow_to_object(
 **No breaking changes!** Existing code continues to work.
 
 If you previously created custom approval handlers (like `OpportunityApprovalHandler`), you can now:
-1. Remove your custom handler class
-2. Remove the `APPROVAL_HANDLERS` setting
+1. **Delete your custom handler file** (e.g., `crm/approval.py`)
+2. **Update `APPROVAL_HANDLERS`** to use the built-in handler:
+   ```python
+   # settings.py
+   APPROVAL_HANDLERS = [
+       "django_workflow_engine.handlers.WorkflowApprovalHandler",  # Built-in handler
+   ]
+   ```
 3. Keep using `attach_workflow_to_object()` as before
 
 The built-in `WorkflowApprovalHandler` now handles everything automatically!
@@ -88,7 +98,20 @@ The built-in `WorkflowApprovalHandler` now handles everything automatically!
 - ✅ **Less boilerplate**: No need to write ~120 lines of handler code per model
 - ✅ **Fewer bugs**: Package handles all edge cases internally
 - ✅ **Easier maintenance**: Updates to workflow logic happen in the package, not your code
-- ✅ **Faster development**: Attach workflow → done!
+- ✅ **Faster development**: One-line setup in settings, then just attach workflows!
+
+### 📝 Required Configuration
+
+**Important**: You must register the built-in handler in your settings:
+
+```python
+# settings.py
+APPROVAL_HANDLERS = [
+    "django_workflow_engine.handlers.WorkflowApprovalHandler",
+]
+```
+
+This tells the `approval-workflow` package to use the built-in handler for workflow progression.
 
 ---
 
