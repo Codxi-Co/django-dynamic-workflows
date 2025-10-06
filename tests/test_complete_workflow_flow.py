@@ -78,12 +78,15 @@ class CompleteWorkflowFlowTest(TestCase):
         return request
 
     def test_complete_workflow_flow_happy_path(self):
-        """Test complete workflow from start to finish (happy path)"""
+        """Test complete workflow from start to finish (happy path).
 
-        # Import services for manual workflow progression
-        # Create a simplified workflow with user-based approvals for testing
+        This test demonstrates automatic workflow progression via handlers.
+        The workflow progresses automatically after each approval - no manual
+        move_to_next_stage calls needed!
+        """
+
+        # Import services for workflow setup
         from django_workflow_engine.choices import ApprovalTypes, WorkflowStatus
-        from django_workflow_engine.services import move_to_next_stage
 
         # Create a simple workflow with user-based approvals
         simple_workflow = WorkFlow.objects.create(
@@ -237,17 +240,15 @@ class CompleteWorkflowFlowTest(TestCase):
         self.assertTrue(serializer.is_valid(), f"Errors: {serializer.errors}")
         serializer.save()
 
-        # Manually move to next stage
-        attachment = move_to_next_stage(
-            self.purchase_request, user=self.finance_reviewer
-        )
+        # Workflow progresses automatically via handler
+        attachment.refresh_from_db()
 
         # If workflow is completed after first stage, we're done
         if attachment.status == "completed":
             self.assertIsNotNone(attachment.completed_at)
             return
 
-        # Verify we moved to Stage 2
+        # Verify we moved to Stage 2 automatically
         self.assertEqual(attachment.status, "in_progress")
         self.assertEqual(attachment.current_stage.name_en, "Budget Approval (Copy)")
 
@@ -268,8 +269,8 @@ class CompleteWorkflowFlowTest(TestCase):
         self.assertTrue(serializer.is_valid(), f"Errors: {serializer.errors}")
         serializer.save()
 
-        # Move to Stage 3
-        attachment = move_to_next_stage(self.purchase_request, user=self.budget_manager)
+        # Workflow progresses automatically
+        attachment.refresh_from_db()
         if attachment.status == "completed":
             self.assertIsNotNone(attachment.completed_at)
             return
@@ -292,8 +293,8 @@ class CompleteWorkflowFlowTest(TestCase):
         self.assertTrue(serializer.is_valid(), f"Errors: {serializer.errors}")
         serializer.save()
 
-        # Move to Stage 4
-        attachment = move_to_next_stage(self.purchase_request, user=self.cfo)
+        # Workflow progresses automatically
+        attachment.refresh_from_db()
         if attachment.status == "completed":
             self.assertIsNotNone(attachment.completed_at)
             return
@@ -316,8 +317,8 @@ class CompleteWorkflowFlowTest(TestCase):
         self.assertTrue(serializer.is_valid(), f"Errors: {serializer.errors}")
         serializer.save()
 
-        # Move to completion (this should complete the workflow since there are no more stages)
-        attachment = move_to_next_stage(self.purchase_request, user=self.executive)
+        # Workflow completes automatically
+        attachment.refresh_from_db()
 
         # Step 7: Verify workflow is completed
         self.assertEqual(

@@ -31,6 +31,35 @@ def pytest_configure(config):
         "django_workflow_engine.handlers.WorkflowApprovalHandler",
     ]
 
+    # Monkey-patch approval_workflow to use our generic handler resolution
+    import approval_workflow.handlers
+
+    from django_workflow_engine.handlers import (
+        get_handler_for_instance as get_workflow_handler,
+    )
+
+    # Store original function
+    _original_get_handler = approval_workflow.handlers.get_handler_for_instance
+
+    def patched_get_handler_for_instance(instance):
+        """Try workflow engine handler first, then fallback to original."""
+        # Try our generic workflow handler
+        workflow_handler = get_workflow_handler(instance)
+        if workflow_handler:
+            return workflow_handler
+        # Fallback to original approval_workflow logic
+        return _original_get_handler(instance)
+
+    # Replace the function
+    approval_workflow.handlers.get_handler_for_instance = (
+        patched_get_handler_for_instance
+    )
+    import approval_workflow.services
+
+    approval_workflow.services.get_handler_for_instance = (
+        patched_get_handler_for_instance
+    )
+
 
 @pytest.fixture(autouse=True)
 def mock_email_backend():

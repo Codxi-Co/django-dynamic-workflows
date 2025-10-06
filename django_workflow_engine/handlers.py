@@ -241,6 +241,10 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
         # Individual approvals don't trigger workflow progression
         # Only final approval (on_final_approve) does
 
+    def on_reject(self, approval_instance):
+        """Called when approval is rejected (newer approval_workflow API)."""
+        self.after_reject(approval_instance)
+
     def after_reject(self, approval_instance):
         """Called when approval is rejected."""
         try:
@@ -321,6 +325,10 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
 
         except Exception as e:
             logger.error(f"Error handling workflow resubmission: {str(e)}")
+
+    def on_delegate(self, approval_instance):
+        """Called when delegation occurs (newer approval_workflow API)."""
+        self.after_delegate(approval_instance)
 
     def after_delegate(self, approval_instance):
         """Called when delegation occurs."""

@@ -630,12 +630,15 @@ class TestPipelineMovement:
         assert next_stage.pipeline.order == pipeline2.order
 
     def test_pipeline_movement_with_approval_flow(self, company_user):
-        """Test movement between pipelines using approval flow.
+        """Test movement between pipelines using ONLY WorkflowApprovalSerializer.
 
-        This test demonstrates the complete approval flow for a multi-pipeline workflow:
+        This test demonstrates automatic workflow progression:
         1. Use WorkflowApprovalSerializer to approve each stage
-        2. Call move_to_next_stage to progress the workflow
+        2. Workflow progresses AUTOMATICALLY via handlers (no manual move_to_next_stage!)
         3. Verify pipeline transitions happen correctly
+
+        This is how developers should use the workflow engine - just approve with
+        the serializer and the workflow progresses automatically.
         """
         from approval_workflow.choices import ApprovalStatus
         from approval_workflow.models import ApprovalFlow, ApprovalInstance
@@ -786,10 +789,7 @@ class TestPipelineMovement:
         assert serializer.is_valid()
         serializer.save()
 
-        # Progress to next stage
-        attachment = move_to_next_stage(test_obj, user=company_user)
-
-        # Verify we moved to Pipeline 1, Stage 2
+        # Workflow should progress AUTOMATICALLY via handler!
         attachment.refresh_from_db()
         assert attachment.current_pipeline.id == cloned_pipeline1.id
         assert attachment.current_stage.id == cloned_stage1_2.id
@@ -810,10 +810,7 @@ class TestPipelineMovement:
         assert serializer.is_valid()
         serializer.save()
 
-        # Progress to next stage - CRITICAL: This triggers pipeline transition!
-        attachment = move_to_next_stage(test_obj, user=company_user)
-
-        # ===== VERIFY PIPELINE TRANSITION =====
+        # ===== VERIFY PIPELINE TRANSITION (happens automatically!) =====
         attachment.refresh_from_db()
         assert (
             attachment.current_pipeline.id == cloned_pipeline2.id
@@ -836,10 +833,7 @@ class TestPipelineMovement:
         assert serializer.is_valid()
         serializer.save()
 
-        # Progress to next stage
-        attachment = move_to_next_stage(test_obj, user=company_user)
-
-        # Verify we moved to Pipeline 2, Stage 2 (last stage)
+        # Workflow progresses automatically
         attachment.refresh_from_db()
         assert attachment.current_pipeline.id == cloned_pipeline2.id
         assert attachment.current_stage.id == cloned_stage2_2.id
@@ -860,10 +854,7 @@ class TestPipelineMovement:
         assert serializer.is_valid()
         serializer.save()
 
-        # Progress to final stage - completes workflow
-        attachment = move_to_next_stage(test_obj, user=company_user)
-
-        # ===== VERIFY WORKFLOW COMPLETION =====
+        # ===== VERIFY WORKFLOW COMPLETION (happens automatically!) =====
         attachment.refresh_from_db()
         assert attachment.status == "completed"
         assert attachment.progress_percentage == 100
