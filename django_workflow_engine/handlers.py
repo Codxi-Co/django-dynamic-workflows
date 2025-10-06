@@ -145,26 +145,7 @@ def get_handler_for_instance(
         # Object is using workflow engine - return generic workflow handler
         return WorkflowApprovalHandler(target_object)
 
-    # Try to get a specific handler for this object type
-    handler_name = f"{target_object._meta.app_label}.{target_object._meta.model_name}"
-
-    # Legacy support for specific handlers
-    if (
-        hasattr(target_object, "_meta")
-        and target_object._meta.model_name == "opportunity"
-    ):
-        # Return opportunity-specific handler if available
-        try:
-            from django.apps import apps
-
-            if apps.is_installed("crm"):
-                from crm.approval import OpportunityApprovalHandler
-
-                return OpportunityApprovalHandler(target_object)
-        except ImportError:
-            logger.debug(f"No specific handler found for {handler_name}")
-
-    logger.debug(f"No handler found for {handler_name}")
+    # No workflow attachment found
     return None
 
 

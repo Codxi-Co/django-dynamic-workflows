@@ -5,6 +5,44 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.6] - 2025-10-06
+
+### 🚀 Handler Discovery Integration & Workflow Compatibility Update
+
+### Changed
+- **Dependency Upgrade:** Updated `django-approval-workflow` to version **0.8.5**
+  - Adds `APPROVAL_HANDLER_DISCOVERY_FUNCTION` for flexible handler resolution
+  - Maintains backward compatibility with `APPROVAL_HANDLERS` list
+  - Improves SUBMIT type validation for consistent behavior
+
+### Added
+- **Handler Discovery Compatibility:**
+  - Integrated new discovery mechanism for automatic handler detection via app label and model name
+  - Retained legacy `OpportunityApprovalHandler` fallback for CRM workflows
+  - Added detailed debug logs for discovery order and fallback resolution
+  - Compatible with both custom discovery functions and built-in handlers
+
+### Fixed
+- **Automatic Handler Resolution:**
+  - Ensured all workflow progression tests continue to work with automatic handlers
+  - Preserved multi-pipeline transitions without requiring manual handler registration
+  - Prevented handler import errors when CRM app not installed
+  - Added safe import guards and structured debug logging
+
+### Improved
+- Unified logging format for handler discovery and fallback resolution
+- Simplified compatibility layer ensuring smooth transition to handler discovery in v0.8.5
+- Verified compatibility with `WorkflowApprovalHandler` auto-progression and pipeline synchronization
+
+### Technical
+- Updated `handlers.py` with custom discovery and safe fallback mechanism
+- Updated `requirements.txt` to use `django-approval-workflow==0.8.5`
+- All workflow progression and multi-pipeline tests passing successfully
+
+### Impact
+Developers can now leverage advanced handler discovery patterns introduced in `django-approval-workflow v0.8.5`
+while retaining seamless workflow progression and multi-pipeline support with zero configuration changes required.
+
 ## [1.2.5] - 2025-10-05
 
 ### Fixed
