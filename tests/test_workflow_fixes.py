@@ -629,6 +629,246 @@ class TestPipelineMovement:
         assert next_stage.order == stage2_1.order
         assert next_stage.pipeline.order == pipeline2.order
 
+    def test_pipeline_movement_with_approval_flow(self, company_user):
+        """Test movement between pipelines using approval flow.
+
+        This test demonstrates the complete approval flow for a multi-pipeline workflow:
+        1. Use WorkflowApprovalSerializer to approve each stage
+        2. Call move_to_next_stage to progress the workflow
+        3. Verify pipeline transitions happen correctly
+        """
+        from approval_workflow.choices import ApprovalStatus
+        from approval_workflow.models import ApprovalFlow, ApprovalInstance
+
+        # Create workflow with 2 pipelines, 2 stages each
+        workflow = WorkFlow.objects.create(
+            name_en="Multi-Pipeline Workflow",
+            name_ar="سير عمل متعدد المسارات",
+            company=company_user,
+            created_by=company_user,
+            status="active",
+        )
+
+        # Pipeline 1: Finance
+        pipeline1 = Pipeline.objects.create(
+            workflow=workflow,
+            name_en="Finance Pipeline",
+            name_ar="مسار المالية",
+            company=company_user,
+            order=0,
+        )
+
+        stage1_1 = Stage.objects.create(
+            pipeline=pipeline1,
+            name_en="Finance Review",
+            name_ar="مراجعة مالية",
+            company=company_user,
+            order=0,
+            is_active=True,
+            stage_info={
+                "approvals": [
+                    {"approval_type": "user", "approval_user": company_user.id}
+                ],
+            },
+        )
+
+        stage1_2 = Stage.objects.create(
+            pipeline=pipeline1,
+            name_en="Finance Approval",
+            name_ar="موافقة مالية",
+            company=company_user,
+            order=1,
+            is_active=True,
+            stage_info={
+                "approvals": [
+                    {"approval_type": "user", "approval_user": company_user.id}
+                ],
+            },
+        )
+
+        # Pipeline 2: Management
+        pipeline2 = Pipeline.objects.create(
+            workflow=workflow,
+            name_en="Management Pipeline",
+            name_ar="مسار الإدارة",
+            company=company_user,
+            order=1,
+        )
+
+        stage2_1 = Stage.objects.create(
+            pipeline=pipeline2,
+            name_en="Manager Review",
+            name_ar="مراجعة المدير",
+            company=company_user,
+            order=0,
+            is_active=True,
+            stage_info={
+                "approvals": [
+                    {"approval_type": "user", "approval_user": company_user.id}
+                ],
+            },
+        )
+
+        stage2_2 = Stage.objects.create(
+            pipeline=pipeline2,
+            name_en="Executive Approval",
+            name_ar="موافقة تنفيذية",
+            company=company_user,
+            order=1,
+            is_active=True,
+            stage_info={
+                "approvals": [
+                    {"approval_type": "user", "approval_user": company_user.id}
+                ],
+            },
+        )
+
+        workflow.update_active_status()
+        workflow.is_active = True
+        workflow.save()
+
+        # Create test object
+        test_obj = WorkflowTestModel.objects.create(
+            name="Test Object",
+            created_by=company_user,
+        )
+
+        # Attach and start workflow
+        attachment = attach_workflow_to_object(
+            test_obj, workflow, user=company_user, auto_start=True
+        )
+
+        # Verify we're in Pipeline 1, Stage 1
+        attachment.refresh_from_db()
+
+        # Get the cloned workflow's pipelines and stages
+        cloned_workflow = attachment.workflow
+        cloned_pipelines = list(cloned_workflow.pipelines.order_by("order"))
+        cloned_pipeline1 = cloned_pipelines[0]
+        cloned_pipeline2 = cloned_pipelines[1]
+
+        cloned_stages_p1 = list(cloned_pipeline1.stages.order_by("order"))
+        cloned_stage1_1 = cloned_stages_p1[0]
+        cloned_stage1_2 = cloned_stages_p1[1]
+
+        cloned_stages_p2 = list(cloned_pipeline2.stages.order_by("order"))
+        cloned_stage2_1 = cloned_stages_p2[0]
+        cloned_stage2_2 = cloned_stages_p2[1]
+
+        assert attachment.current_pipeline.id == cloned_pipeline1.id
+        assert attachment.current_stage.id == cloned_stage1_1.id
+        assert attachment.status == "in_progress"
+        assert attachment.progress_percentage == 25  # 1/4 stages
+
+        # Create mock request
+        factory = RequestFactory()
+        request = factory.post("/")
+        request.user = company_user
+
+        # ===== APPROVE STAGE 1.1 (Finance Review) =====
+        content_type = ContentType.objects.get_for_model(WorkflowTestModel)
+        approval_flow = ApprovalFlow.objects.get(
+            content_type=content_type,
+            object_id=test_obj.pk,
+        )
+
+        current_approval = ApprovalInstance.objects.get(
+            flow=approval_flow,
+            status=ApprovalStatus.CURRENT,
+        )
+        assert current_approval.assigned_to.id == company_user.id
+
+        serializer = WorkflowApprovalSerializer(
+            instance=test_obj,
+            data={"action": ApprovalStatus.APPROVED},
+            context={"request": request},
+        )
+        assert serializer.is_valid()
+        serializer.save()
+
+        # Progress to next stage
+        attachment = move_to_next_stage(test_obj, user=company_user)
+
+        # Verify we moved to Pipeline 1, Stage 2
+        attachment.refresh_from_db()
+        assert attachment.current_pipeline.id == cloned_pipeline1.id
+        assert attachment.current_stage.id == cloned_stage1_2.id
+        assert attachment.status == "in_progress"
+        assert attachment.progress_percentage == 50  # 2/4 stages
+
+        # ===== APPROVE STAGE 1.2 (Finance Approval) =====
+        current_approval = ApprovalInstance.objects.get(
+            flow=approval_flow,
+            status=ApprovalStatus.CURRENT,
+        )
+
+        serializer = WorkflowApprovalSerializer(
+            instance=test_obj,
+            data={"action": ApprovalStatus.APPROVED},
+            context={"request": request},
+        )
+        assert serializer.is_valid()
+        serializer.save()
+
+        # Progress to next stage - CRITICAL: This triggers pipeline transition!
+        attachment = move_to_next_stage(test_obj, user=company_user)
+
+        # ===== VERIFY PIPELINE TRANSITION =====
+        attachment.refresh_from_db()
+        assert (
+            attachment.current_pipeline.id == cloned_pipeline2.id
+        )  # Moved to Pipeline 2!
+        assert attachment.current_stage.id == cloned_stage2_1.id
+        assert attachment.status == "in_progress"
+        assert attachment.progress_percentage == 75  # 3/4 stages
+
+        # ===== APPROVE STAGE 2.1 (Manager Review) =====
+        current_approval = ApprovalInstance.objects.get(
+            flow=approval_flow,
+            status=ApprovalStatus.CURRENT,
+        )
+
+        serializer = WorkflowApprovalSerializer(
+            instance=test_obj,
+            data={"action": ApprovalStatus.APPROVED},
+            context={"request": request},
+        )
+        assert serializer.is_valid()
+        serializer.save()
+
+        # Progress to next stage
+        attachment = move_to_next_stage(test_obj, user=company_user)
+
+        # Verify we moved to Pipeline 2, Stage 2 (last stage)
+        attachment.refresh_from_db()
+        assert attachment.current_pipeline.id == cloned_pipeline2.id
+        assert attachment.current_stage.id == cloned_stage2_2.id
+        assert attachment.status == "in_progress"
+        assert attachment.progress_percentage == 100  # 4/4 stages
+
+        # ===== APPROVE FINAL STAGE 2.2 (Executive Approval) =====
+        current_approval = ApprovalInstance.objects.get(
+            flow=approval_flow,
+            status=ApprovalStatus.CURRENT,
+        )
+
+        serializer = WorkflowApprovalSerializer(
+            instance=test_obj,
+            data={"action": ApprovalStatus.APPROVED},
+            context={"request": request},
+        )
+        assert serializer.is_valid()
+        serializer.save()
+
+        # Progress to final stage - completes workflow
+        attachment = move_to_next_stage(test_obj, user=company_user)
+
+        # ===== VERIFY WORKFLOW COMPLETION =====
+        attachment.refresh_from_db()
+        assert attachment.status == "completed"
+        assert attachment.progress_percentage == 100
+        assert attachment.completed_at is not None
+
 
 @pytest.mark.django_db
 class TestWorkflowCompletion:
