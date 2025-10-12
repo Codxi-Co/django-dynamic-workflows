@@ -702,6 +702,24 @@ class WorkflowConfiguration(models.Model):
         help_text=_("Field name on the model to store current stage"),
     )
 
+    # Status values for workflow completion/rejection
+    completion_status_value = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text=_(
+            "Value to set in the status_field when workflow completes successfully "
+            "(e.g., 'completed', 'won', 'closed')"
+        ),
+    )
+    rejection_status_value = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text=_(
+            "Value to set in the status_field when workflow is rejected "
+            "(e.g., 'rejected', 'cancelled', 'lost')"
+        ),
+    )
+
     created_at = models.DateTimeField(auto_now_add=True, null=True)
     modified_at = models.DateTimeField(auto_now=True, null=True)
 

@@ -358,6 +358,214 @@ attachment = attach_workflow_to_object(
 - `ON_WORKFLOW_START`: When workflow begins
 - `ON_WORKFLOW_COMPLETE`: When workflow completes
 
+## Automatic Status Updates on Workflow Completion/Rejection
+
+**New in v1.2.7**: Automatically update your model's status field when workflows complete or are rejected.
+
+### Overview
+
+The workflow engine can automatically update your model's status field based on workflow outcomes:
+- When workflow **completes** → Update to completion status (e.g., "won", "closed", "completed")
+- When workflow is **rejected** → Update to rejection status (e.g., "lost", "cancelled", "rejected")
+
+This eliminates manual status management and ensures your models stay in sync with workflow states.
+
+### Configuration
+
+Configure status updates in your `WorkflowConfiguration`:
+
+```python
+from django_workflow_engine.models import WorkflowConfiguration
+from django.contrib.contenttypes.models import ContentType
+
+# Get or create configuration for your model
+ct = ContentType.objects.get_for_model(YourModel)
+config, created = WorkflowConfiguration.objects.get_or_create(
+    content_type=ct,
+    defaults={
+        'status_field': 'status',  # Field name on your model
+        'completion_status_value': 'completed',  # Value on workflow completion
+        'rejection_status_value': 'rejected',    # Value on workflow rejection
+    }
+)
+```
+
+### Real-World Examples
+
+#### Example 1: CRM Opportunity Workflow
+
+```python
+# models.py
+class Opportunity(models.Model):
+    name = models.CharField(max_length=200)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=50, default='draft')
+    # ... other fields
+
+# Configure workflow
+from django_workflow_engine.services import register_model_for_workflow
+
+register_model_for_workflow(
+    Opportunity,
+    status_field='status',
+    stage_field='current_stage'
+)
+
+# Set status values
+ct = ContentType.objects.get_for_model(Opportunity)
+config = WorkflowConfiguration.objects.get(content_type=ct)
+config.completion_status_value = 'won'      # When deal closes
+config.rejection_status_value = 'lost'      # When deal fails
+config.save()
+
+# Workflow behavior:
+# - All stages approved → opportunity.status = 'won'
+# - Any stage rejected → opportunity.status = 'lost'
+```
+
+#### Example 2: Support Ticket Workflow
+
+```python
+# models.py
+class Ticket(models.Model):
+    title = models.CharField(max_length=200)
+    status = models.CharField(max_length=50, default='open')
+    priority = models.CharField(max_length=20)
+    # ... other fields
+
+# Configure workflow
+ct = ContentType.objects.get_for_model(Ticket)
+config, created = WorkflowConfiguration.objects.get_or_create(
+    content_type=ct,
+    defaults={
+        'status_field': 'status',
+        'completion_status_value': 'closed',
+        'rejection_status_value': 'cancelled',
+    }
+)
+
+# Workflow behavior:
+# - Resolution approved → ticket.status = 'closed'
+# - Ticket rejected → ticket.status = 'cancelled'
+```
+
+#### Example 3: Purchase Request Workflow
+
+```python
+# models.py
+class PurchaseRequest(models.Model):
+    title = models.CharField(max_length=200)
+    amount = models.DecimalField(max_digits=10, decimal_places=2)
+    status = models.CharField(max_length=50, default='pending')
+    # ... other fields
+
+# Configure workflow
+ct = ContentType.objects.get_for_model(PurchaseRequest)
+config = WorkflowConfiguration.objects.get(content_type=ct)
+config.status_field = 'status'
+config.completion_status_value = 'approved'
+config.rejection_status_value = 'denied'
+config.save()
+
+# Workflow behavior:
+# - All approvals completed → purchase_request.status = 'approved'
+# - Finance rejects → purchase_request.status = 'denied'
+```
+
+### How It Works
+
+When a workflow completes or is rejected, the system:
+
+1. **Looks up the configuration** for your model's ContentType
+2. **Checks if status_field is configured** (e.g., "status")
+3. **Verifies the field exists** on your model
+4. **Updates the field value**:
+   - On completion: Sets `completion_status_value`
+   - On rejection: Sets `rejection_status_value`
+5. **Saves the change** using `update_fields` for efficiency
+6. **Logs the update** for audit trail
+
+### Optional Configuration
+
+Status updates are completely optional and backward compatible:
+
+```python
+# No status field configured → No automatic updates
+config.status_field = ''  # Not configured
+
+# Status field configured but no completion value → No update on completion
+config.status_field = 'status'
+config.completion_status_value = ''  # Won't update on completion
+config.rejection_status_value = 'rejected'  # Will update on rejection
+
+# Full configuration → Updates on both events
+config.status_field = 'status'
+config.completion_status_value = 'completed'
+config.rejection_status_value = 'rejected'
+```
+
+### Logging and Audit Trail
+
+All status updates are logged:
+
+```python
+# Info log on successful update
+logger.info(
+    "Updated Opportunity(123).status from 'in_progress' to 'won' on workflow completion"
+)
+
+# Warning if field doesn't exist
+logger.warning(
+    "Model Opportunity does not have field 'status', cannot update status on completion"
+)
+
+# Debug if not configured
+logger.debug(
+    "No status_field configured for Opportunity, skipping status update"
+)
+```
+
+### Django Admin Configuration
+
+You can also configure status values via Django Admin:
+
+1. Go to **Django Admin** → **Workflow Configurations**
+2. Select your model's configuration
+3. Set the fields:
+   - **Status field**: The field name (e.g., "status")
+   - **Completion status value**: Value on workflow completion (e.g., "completed")
+   - **Rejection status value**: Value on workflow rejection (e.g., "rejected")
+4. Save
+
+### Migration
+
+After upgrading to v1.2.7, run the migration:
+
+```bash
+python manage.py migrate django_workflow_engine
+```
+
+This adds the `completion_status_value` and `rejection_status_value` fields to `WorkflowConfiguration`.
+
+### Best Practices
+
+1. **Use consistent status values** across your application
+2. **Define status choices** in your model for validation:
+   ```python
+   class Opportunity(models.Model):
+       STATUS_CHOICES = [
+           ('draft', 'Draft'),
+           ('in_progress', 'In Progress'),
+           ('won', 'Won'),
+           ('lost', 'Lost'),
+       ]
+       status = models.CharField(max_length=50, choices=STATUS_CHOICES)
+   ```
+
+3. **Log status changes** for audit purposes (handled automatically)
+4. **Test your workflow** to ensure status transitions work as expected
+5. **Consider using signals** if you need additional logic on status change
+
 ## Custom Actions
 
 The Django Workflow Engine supports powerful custom actions that execute automatically at key workflow events. Actions can send emails, update external systems, create tasks, log events, and more.

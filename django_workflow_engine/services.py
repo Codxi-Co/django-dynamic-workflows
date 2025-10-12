@@ -603,6 +603,14 @@ def reject_workflow_stage(
         attachment.metadata["rejected_by"] = user.username if user else "system"
     attachment.save()
 
+    # Update the content object's status field if configured
+    try:
+        config = WorkflowConfiguration.objects.get(content_type=content_type)
+        if config.rejection_status_value:
+            update_object_status(obj, config.rejection_status_value, "rejection")
+    except WorkflowConfiguration.DoesNotExist:
+        pass
+
     # Trigger reject actions
     trigger_workflow_event(
         attachment, ActionType.AFTER_REJECT, stage=stage, reason=reason, user=user
@@ -613,6 +621,59 @@ def reject_workflow_stage(
     )
 
     return attachment
+
+
+def update_object_status(
+    obj: Model, status_value: str, event_type: str = "completion"
+) -> bool:
+    """Update the status field on the content object based on workflow configuration.
+
+    Args:
+        obj: The model instance to update
+        status_value: The status value to set
+        event_type: Type of event (completion or rejection) for logging
+
+    Returns:
+        True if status was updated, False otherwise
+    """
+    from django.contrib.contenttypes.models import ContentType
+
+    content_type = ContentType.objects.get_for_model(obj)
+
+    try:
+        config = WorkflowConfiguration.objects.get(content_type=content_type)
+
+        # Check if status_field is configured
+        if not config.status_field:
+            logger.debug(
+                f"No status_field configured for {obj._meta.label}, skipping status update"
+            )
+            return False
+
+        # Check if the object has the status field
+        if not hasattr(obj, config.status_field):
+            logger.warning(
+                f"Model {obj._meta.label} does not have field '{config.status_field}', "
+                f"cannot update status on {event_type}"
+            )
+            return False
+
+        # Update the status field
+        old_status = getattr(obj, config.status_field, None)
+        setattr(obj, config.status_field, status_value)
+        obj.save(update_fields=[config.status_field])
+
+        logger.info(
+            f"Updated {obj._meta.label}({obj.pk}).{config.status_field} "
+            f"from '{old_status}' to '{status_value}' on workflow {event_type}"
+        )
+        return True
+
+    except WorkflowConfiguration.DoesNotExist:
+        logger.debug(
+            f"No WorkflowConfiguration found for {obj._meta.label}, skipping status update"
+        )
+        return False
 
 
 def complete_workflow(obj: Model, user: User = None) -> WorkflowAttachment:
@@ -643,6 +704,14 @@ def complete_workflow(obj: Model, user: User = None) -> WorkflowAttachment:
     attachment.current_stage = None
     attachment.current_pipeline = None
     attachment.save()
+
+    # Update the content object's status field if configured
+    try:
+        config = WorkflowConfiguration.objects.get(content_type=content_type)
+        if config.completion_status_value:
+            update_object_status(obj, config.completion_status_value, "completion")
+    except WorkflowConfiguration.DoesNotExist:
+        pass
 
     # Trigger workflow complete actions
     trigger_workflow_event(attachment, ActionType.ON_WORKFLOW_COMPLETE, user=user)

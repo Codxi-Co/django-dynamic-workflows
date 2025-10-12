@@ -5,6 +5,105 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.7] - 2025-10-12
+
+### 🎯 Automatic Status Updates on Workflow Completion/Rejection
+
+This release introduces intelligent automatic status management for your models based on workflow outcomes.
+
+### Added
+
+- **Completion Status Updates**: `WorkflowConfiguration.completion_status_value` field
+  - Automatically updates model's status field when workflow completes successfully
+  - Example: Set Opportunity status to "won" when deal approval completes
+
+- **Rejection Status Updates**: `WorkflowConfiguration.rejection_status_value` field
+  - Automatically updates model's status field when workflow is rejected
+  - Example: Set Opportunity status to "lost" when deal is rejected
+
+- **Smart Status Update Function**: `update_object_status()` in services.py
+  - Validates field existence before updating
+  - Uses efficient `update_fields` for performance
+  - Comprehensive logging for audit trail
+  - Graceful handling of missing configurations
+
+### Enhanced
+
+- **`complete_workflow()` Function**: Now automatically updates object status on completion
+  - Checks for `completion_status_value` configuration
+  - Updates content object's status field if configured
+  - Maintains backward compatibility (no updates if not configured)
+
+- **`reject_workflow_stage()` Function**: Now automatically updates object status on rejection
+  - Checks for `rejection_status_value` configuration
+  - Updates content object's status field if configured
+  - Maintains backward compatibility (no updates if not configured)
+
+### Migration
+
+- **Migration 0004**: Adds `completion_status_value` and `rejection_status_value` fields to `WorkflowConfiguration`
+  - Both fields are optional (blank=True)
+  - CharField with max_length=100
+  - Includes helpful documentation in help_text
+
+### Documentation
+
+- **Comprehensive README Section**: Added "Automatic Status Updates on Workflow Completion/Rejection"
+  - Configuration examples for multiple use cases
+  - Real-world examples: CRM Opportunities, Support Tickets, Purchase Requests
+  - Django Admin configuration guide
+  - Best practices and logging information
+  - Migration instructions
+
+### Use Cases
+
+**Example 1: CRM Opportunity**
+```python
+config.completion_status_value = 'won'   # Deal closed successfully
+config.rejection_status_value = 'lost'   # Deal failed
+```
+
+**Example 2: Support Ticket**
+```python
+config.completion_status_value = 'closed'      # Ticket resolved
+config.rejection_status_value = 'cancelled'    # Ticket cancelled
+```
+
+**Example 3: Purchase Request**
+```python
+config.completion_status_value = 'approved'  # Purchase approved
+config.rejection_status_value = 'denied'     # Purchase denied
+```
+
+### Technical Details
+
+- **Backward Compatible**: Completely optional feature, existing code works unchanged
+- **No Breaking Changes**: All status updates only happen if explicitly configured
+- **Efficient Updates**: Uses `update_fields` to only update the status field
+- **Comprehensive Logging**:
+  - Info logs on successful updates
+  - Warning logs if configured field doesn't exist
+  - Debug logs when not configured
+
+### Benefits
+
+- ✅ **Eliminates manual status management**: No need to update status in custom code
+- ✅ **Ensures consistency**: Model status always reflects workflow state
+- ✅ **Audit trail**: All status updates are logged automatically
+- ✅ **Flexible**: Configure different status values for different models
+- ✅ **Optional**: Fully backward compatible, only works when configured
+
+### Files Changed
+
+- `django_workflow_engine/models.py`: Added `completion_status_value` and `rejection_status_value` fields
+- `django_workflow_engine/services.py`: Added `update_object_status()` function and updated workflow completion/rejection logic
+- `django_workflow_engine/migrations/0004_add_status_values_to_workflowconfiguration.py`: New migration
+- `README.md`: Added comprehensive documentation section with examples
+- `django_workflow_engine/__init__.py`: Version bump to 1.2.7
+- `pyproject.toml`: Version bump to 1.2.7
+
+---
+
 ## [1.2.6] - 2025-10-06
 
 ### 🚀 Handler Discovery Integration & Workflow Compatibility Update
