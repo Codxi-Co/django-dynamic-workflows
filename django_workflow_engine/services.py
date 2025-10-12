@@ -131,6 +131,20 @@ def create_workflow(
         pipeline_count=len(pipelines_data),
     )
 
+    # Auto-generate orders if all pipelines have order = 0 or None
+    all_orders_zero_or_none = all(
+        pipeline_data.get("order") in (0, None) for pipeline_data in pipelines_data
+    )
+
+    if all_orders_zero_or_none and len(pipelines_data) > 0:
+        logger.info(
+            "Auto-generating pipeline orders for workflow '%s' (ID: %s)",
+            name_en,
+            workflow.id,
+        )
+        for index, pipeline_data in enumerate(pipelines_data):
+            pipeline_data["order"] = index
+
     for pipeline_data in pipelines_data:
         create_pipeline(workflow, pipeline_data, created_by)
 

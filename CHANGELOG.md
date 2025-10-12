@@ -5,6 +5,48 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.8] - 2025-10-12
+
+### 🔧 Pipeline Order Auto-Generation
+
+This release adds intelligent automatic order generation for pipelines when order values are not provided.
+
+### Added
+
+- **Automatic Pipeline Order Generation**: `create_workflow()` now detects when all pipelines have `order=0` or `order=None`
+  - Automatically generates incremental order values (0, 1, 2, etc.)
+  - Prevents manual ordering errors for apps that don't send proper order values
+  - Maintains existing order values when at least one pipeline has a non-zero order
+  - Adds info logging when auto-generation occurs for debugging
+
+### Enhanced
+
+- **`create_workflow()` Function**: Enhanced pipeline creation logic
+  - Checks all pipeline orders before creation
+  - Auto-assigns sequential orders when all orders are 0 or null
+  - Preserves explicit order values when provided
+  - First pipeline gets order 0, second gets 1, third gets 2, etc.
+
+### Technical Details
+
+- **Backward Compatible**: Existing workflows with explicit orders continue to work unchanged
+- **No Breaking Changes**: Only activates when all pipelines have order 0 or None
+- **Smart Detection**: Uses `all()` to check if auto-generation should occur
+- **Performance**: Minimal overhead, single pass through pipeline data
+
+### Benefits
+
+- ✅ **Prevents ordering issues**: Apps that forget to send order values get automatic ordering
+- ✅ **Reduces errors**: No more pipelines with identical orders causing confusion
+- ✅ **Developer friendly**: Works automatically without configuration
+- ✅ **Preserves control**: Apps can still specify custom orders when needed
+
+### Files Changed
+
+- `django_workflow_engine/services.py`: Enhanced `create_workflow()` with auto-order generation logic (lines 134-146)
+
+---
+
 ## [1.2.7] - 2025-10-12
 
 ### 🎯 Automatic Status Updates on Workflow Completion/Rejection
