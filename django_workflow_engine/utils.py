@@ -100,19 +100,29 @@ def get_workflow_stage_approvers(stage, created_by_user: User) -> List[Dict[str,
 
 
 def build_approval_steps(
-    stage, created_by_user: Optional[User]
+    stage, created_by_user: Optional[User], start_step: int = 1
 ) -> List[Dict[str, Any]]:
     """Build approval steps for a workflow stage with optimized batch queries.
 
     Args:
         stage: The Stage instance
         created_by_user: The user who created the workflow item (can be None)
+        start_step: The starting step number (default: 1). Use this to continue
+                   numbering from a specific point, e.g., after resubmission or
+                   when extending an existing flow.
 
     Returns:
         List of approval step configurations
 
     Raises:
         ValueError: If created_by_user is None and required for approval steps
+
+    Example:
+        # Start from step 1 (default)
+        steps = build_approval_steps(stage, user)
+
+        # Continue from step 10 (e.g., after resubmission)
+        steps = build_approval_steps(stage, user, start_step=10)
     """
     if not created_by_user:
         logger.error(
@@ -195,7 +205,8 @@ def build_approval_steps(
             logger.error(f"Error fetching forms: {e}")
 
     # Build steps using cached data
-    for i, approval_data in enumerate(approvals, start=1):
+    # Use start_step to continue numbering from a specific point
+    for i, approval_data in enumerate(approvals, start=start_step):
         step = {
             "step": i,
             "extra_fields": {"stage_id": stage.id},

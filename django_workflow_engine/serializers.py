@@ -291,7 +291,13 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             )
 
     def _prepare_resubmission_steps(self, validated_data):
-        """Prepare resubmission steps for the specified stage."""
+        """Prepare resubmission steps for the specified stage.
+
+        IMPORTANT: Steps are numbered to continue from the current step.
+        Example: If currently at step 5, new resubmission steps start from 6.
+        This ensures step numbers are cumulative across the entire workflow,
+        not restarting from 1 after resubmission.
+        """
         stage_id = validated_data["stage_id"]
 
         try:
@@ -308,6 +314,19 @@ class WorkflowApprovalSerializer(serializers.Serializer):
 
             if not current_approval:
                 raise ValueError("No current approval found for resubmission")
+
+            # Calculate starting step number for resubmission
+            # The approval_workflow package will:
+            # 1. Mark current step as NEEDS_RESUBMISSION
+            # 2. Delete all PENDING/CURRENT steps after the current step
+            # 3. Create new steps starting from current_step + 1
+            current_step_number = current_approval.step_number
+            start_step = current_step_number + 1
+
+            logger.info(
+                f"Preparing resubmission steps - Current step: {current_step_number}, "
+                f"New steps will start from: {start_step}"
+            )
 
             # Build resubmission steps using workflow handler pattern
             from django.contrib.auth import get_user_model
@@ -328,13 +347,19 @@ class WorkflowApprovalSerializer(serializers.Serializer):
                 created_by = User.objects.get(pk=created_by)
 
             builder = ApprovalStepBuilder(stage, created_by)
-            resubmission_steps = builder.build_steps()
+            # Pass start_step to continue numbering from current position
+            resubmission_steps = builder.build_steps(start_step=start_step)
 
             # Add resubmission stage_id to each step's extra_fields
             for step in resubmission_steps:
                 if "extra_fields" not in step:
                     step["extra_fields"] = {}
                 step["extra_fields"]["resubmission_stage_id"] = stage_id
+
+            logger.info(
+                f"Resubmission steps prepared - Step numbers: "
+                f"{[step['step'] for step in resubmission_steps]}"
+            )
 
             return resubmission_steps
 

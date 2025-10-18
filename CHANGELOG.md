@@ -5,6 +5,78 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.9] - 2025-10-18
+
+### 🔧 Resubmission Step Numbering Fix
+
+This release fixes a critical bug in resubmission step numbering to ensure steps continue cumulatively across the workflow instead of restarting from 1.
+
+### Fixed
+
+- **Resubmission Step Numbering**: Steps now continue from the current step number instead of restarting from 1
+  - Example: If at step 5 during resubmission, new steps start from 6, 7, 8, etc.
+  - Prevents "Step number already exists in the flow" errors
+  - Maintains cumulative step tracking across the entire workflow journey
+  - Properly handles multiple resubmissions without step number conflicts
+
+### Added
+
+- **`start_step` Parameter**: Added to `build_approval_steps()` function in `utils.py`
+  - Allows continuing step numbering from a specific point
+  - Default value of 1 maintains backward compatibility
+  - Essential for resubmission flows and workflow extensions
+
+- **Step Number Calculation**: Enhanced `_prepare_resubmission_steps()` in `serializers.py`
+  - Calculates starting step as `current_step_number + 1`
+  - Ensures proper step continuation after resubmission
+  - Adds comprehensive logging for debugging
+
+- **Handler Hook**: Added `on_resubmission()` method to `WorkflowApprovalHandler`
+  - Implements newer approval_workflow API
+  - Delegates to `after_resubmission()` for backward compatibility
+  - Fixes missing method errors during resubmission
+
+### Enhanced
+
+- **`ApprovalStepBuilder.build_steps()`**: Now accepts `start_step` parameter
+  - Passes through to `build_approval_steps()` utility function
+  - Enables step number continuation for resubmission scenarios
+  - Maintains backward compatibility with default value
+
+- **Step Enumeration**: Updated to use `enumerate(approvals, start=start_step)`
+  - Dynamically starts numbering from specified step
+  - Replaces hardcoded `start=1` with configurable parameter
+  - Supports complex workflow progression patterns
+
+### Technical Details
+
+- **Backward Compatible**: Existing workflows continue to work unchanged
+- **No Breaking Changes**: Default parameter values maintain current behavior
+- **Smart Calculation**: Uses current approval step number to determine continuation point
+- **Comprehensive Logging**: Added info-level logs to track step number calculations
+
+### Benefits
+
+- ✅ **Fixes resubmission errors**: No more "step already exists" errors
+- ✅ **Cumulative tracking**: Step numbers track entire workflow journey, not per-stage
+- ✅ **Multiple resubmissions**: Supports multiple resubmission cycles without conflicts
+- ✅ **Better audit trail**: Sequential step numbers provide clear workflow history
+- ✅ **Delegation support**: Works seamlessly with delegation (which keeps same step number)
+
+### Files Changed
+
+- `django_workflow_engine/utils.py`: Added `start_step` parameter to `build_approval_steps()` (lines 102-209)
+- `django_workflow_engine/handlers.py`: Added `start_step` parameter to `ApprovalStepBuilder.build_steps()` and `on_resubmission()` hook (lines 165-177, 314-316)
+- `django_workflow_engine/serializers.py`: Enhanced `_prepare_resubmission_steps()` with step calculation logic (lines 293-369)
+
+### Migration Notes
+
+- **No action required**: This is a bug fix with backward compatibility
+- **Automatic**: Resubmissions will automatically use new numbering
+- **Testing**: Verify resubmission flows work correctly in your workflow stages
+
+---
+
 ## [1.2.8] - 2025-10-12
 
 ### 🔧 Pipeline Order Auto-Generation

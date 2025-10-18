@@ -162,15 +162,21 @@ class ApprovalStepBuilder:
         self.stage = stage
         self.created_by_user = created_by_user
 
-    def build_steps(self) -> List[Dict[str, Any]]:
+    def build_steps(self, start_step: int = 1) -> List[Dict[str, Any]]:
         """Build approval steps for the stage.
+
+        Args:
+            start_step: The starting step number (default: 1). Use this to continue
+                       numbering from a specific point (e.g., after resubmission).
 
         Returns:
             List of approval step configurations
         """
         from .utils import build_approval_steps
 
-        return build_approval_steps(self.stage, self.created_by_user)
+        return build_approval_steps(
+            self.stage, self.created_by_user, start_step=start_step
+        )
 
 
 class WorkflowApprovalHandler(BaseApprovalHandler):
@@ -306,6 +312,10 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
 
         except Exception as e:
             logger.error(f"Error handling workflow resubmission: {str(e)}")
+
+    def on_resubmission(self, approval_instance):
+        """Called when resubmission occurs (newer approval_workflow API)."""
+        self.after_resubmission(approval_instance)
 
     def on_delegate(self, approval_instance):
         """Called when delegation occurs (newer approval_workflow API)."""
