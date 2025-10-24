@@ -6,7 +6,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: 1.0\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2025-01-04 12:00+0000\n"
+"POT-Creation-Date: 2025-10-24 09:29+0000\n"
 "PO-Revision-Date: 2025-01-04 12:00+0000\n"
 "Last-Translator: \n"
 "Language-Team: English\n"
@@ -15,6 +15,21 @@ msgstr ""
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "Self Approved"
+msgstr "Self Approved"
+
+msgid "Role"
+msgstr "Role"
+
+msgid "User"
+msgstr "User"
+
+msgid "Team Head"
+msgstr "Team Head"
+
+msgid "Department Head"
+msgstr "Department Head"
 
 # Approval Types
 msgid "Role-based Approval"
@@ -43,57 +58,120 @@ msgid "Rotate approval among role users"
 msgstr "Rotate approval among role users"
 
 # Error Messages
-msgid "No workflow attached to {obj_label}({obj_pk}). Use attach_workflow_to_object() to attach a workflow first."
-msgstr "No workflow attached to {obj_label}({obj_pk}). Use attach_workflow_to_object() to attach a workflow first."
+#, python-brace-format
+msgid ""
+"No workflow attached to {obj_label}({obj_pk}). Use "
+"attach_workflow_to_object() to attach a workflow first."
+msgstr ""
+"No workflow attached to {obj_label}({obj_pk}). Use "
+"attach_workflow_to_object() to attach a workflow first."
 
-msgid "Workflow is not in progress (status: {status}). Current status must be 'in_progress' to perform this action."
-msgstr "Workflow is not in progress (status: {status}). Current status must be 'in_progress' to perform this action."
+#, python-brace-format
+msgid ""
+"Workflow is not in progress (status: {status}). Current status must be "
+"'in_progress' to perform this action."
+msgstr ""
+"Workflow is not in progress (status: {status}). Current status must be "
+"'in_progress' to perform this action."
 
-msgid "Workflow '{workflow_name}' has no pipelines. Add at least one pipeline with stages to use this workflow."
-msgstr "Workflow '{workflow_name}' has no pipelines. Add at least one pipeline with stages to use this workflow."
+#, python-brace-format
+msgid ""
+"Workflow '{workflow_name}' has no pipelines. Add at least one pipeline with "
+"stages to use this workflow."
+msgstr ""
+"Workflow '{workflow_name}' has no pipelines. Add at least one pipeline with "
+"stages to use this workflow."
 
-msgid "Pipeline '{pipeline_name}' has no stages. Add at least one stage with approvals to use this pipeline."
-msgstr "Pipeline '{pipeline_name}' has no stages. Add at least one stage with approvals to use this pipeline."
+#, python-brace-format
+msgid ""
+"Pipeline '{pipeline_name}' has no stages. Add at least one stage with "
+"approvals to use this pipeline."
+msgstr ""
+"Pipeline '{pipeline_name}' has no stages. Add at least one stage with "
+"approvals to use this pipeline."
 
+#, python-brace-format
 msgid "No next stage found, completing workflow for {obj_label}({obj_pk})"
 msgstr "No next stage found, completing workflow for {obj_label}({obj_pk})"
 
-msgid "No current pipeline found for attachment {attachment_id}, cannot determine next stage"
-msgstr "No current pipeline found for attachment {attachment_id}, cannot determine next stage"
+#, python-brace-format
+msgid ""
+"No current pipeline found for attachment {attachment_id}, cannot determine "
+"next stage"
+msgstr ""
+"No current pipeline found for attachment {attachment_id}, cannot determine "
+"next stage"
 
-msgid "No user found for building approval steps for {obj_label}({obj_pk}), this may cause issues with approval flow"
-msgstr "No user found for building approval steps for {obj_label}({obj_pk}), this may cause issues with approval flow"
+#, python-brace-format
+msgid ""
+"No user found for building approval steps for {obj_label}({obj_pk}), this "
+"may cause issues with approval flow"
+msgstr ""
+"No user found for building approval steps for {obj_label}({obj_pk}), this "
+"may cause issues with approval flow"
 
-msgid "Workflow already started (status: {status}). Cannot start a workflow that is already in progress."
-msgstr "Workflow already started (status: {status}). Cannot start a workflow that is already in progress."
+#, python-brace-format
+msgid ""
+"Workflow already started (status: {status}). Cannot start a workflow that is "
+"already in progress."
+msgstr ""
+"Workflow already started (status: {status}). Cannot start a workflow that is "
+"already in progress."
 
-msgid "Workflow '{workflow_name}' is not active and cannot be attached. Please activate the workflow before attaching it to objects."
-msgstr "Workflow '{workflow_name}' is not active and cannot be attached. Please activate the workflow before attaching it to objects."
+#, python-brace-format
+msgid ""
+"Workflow '{workflow_name}' is not active and cannot be attached. Please "
+"activate the workflow before attaching it to objects."
+msgstr ""
+"Workflow '{workflow_name}' is not active and cannot be attached. Please "
+"activate the workflow before attaching it to objects."
 
 # Log Messages
-msgid "Workflow created - ID: {workflow_id}, Name: {name}, Pipelines: {pipeline_count}"
-msgstr "Workflow created - ID: {workflow_id}, Name: {name}, Pipelines: {pipeline_count}"
+#, python-brace-format
+msgid ""
+"Workflow created - ID: {workflow_id}, Name: {name}, Pipelines: "
+"{pipeline_count}"
+msgstr ""
+"Workflow created - ID: {workflow_id}, Name: {name}, Pipelines: "
+"{pipeline_count}"
 
-msgid "Pipeline created - ID: {pipeline_id}, Workflow: {workflow_name}, Stages: {stage_count}"
-msgstr "Pipeline created - ID: {pipeline_id}, Workflow: {workflow_name}, Stages: {stage_count}"
+#, python-brace-format
+msgid ""
+"Pipeline created - ID: {pipeline_id}, Workflow: {workflow_name}, Stages: "
+"{stage_count}"
+msgstr ""
+"Pipeline created - ID: {pipeline_id}, Workflow: {workflow_name}, Stages: "
+"{stage_count}"
 
+#, python-brace-format
 msgid "Workflow started for {obj_label}({obj_pk}) at stage '{stage_name}'"
 msgstr "Workflow started for {obj_label}({obj_pk}) at stage '{stage_name}'"
 
+#, python-brace-format
 msgid "Workflow completed for {obj_label}({obj_pk})"
 msgstr "Workflow completed for {obj_label}({obj_pk})"
 
+#, python-brace-format
 msgid "Moved {obj_label}({obj_pk}) from stage '{from_stage}' to '{to_stage}'"
 msgstr "Moved {obj_label}({obj_pk}) from stage '{from_stage}' to '{to_stage}'"
 
+#, python-brace-format
 msgid "Pipeline changed from '{from_pipeline}' to '{to_pipeline}'"
 msgstr "Pipeline changed from '{from_pipeline}' to '{to_pipeline}'"
 
+#, python-brace-format
 msgid "Starting approval flow for stage '{stage_name}' with {step_count} steps"
-msgstr "Starting approval flow for stage '{stage_name}' with {step_count} steps"
+msgstr ""
+"Starting approval flow for stage '{stage_name}' with {step_count} steps"
 
-msgid "No approval steps generated for stage '{stage_name}', workflow may be stuck"
-msgstr "No approval steps generated for stage '{stage_name}', workflow may be stuck"
+#, python-brace-format
+msgid ""
+"No approval steps generated for stage '{stage_name}', workflow may be stuck"
+msgstr ""
+"No approval steps generated for stage '{stage_name}', workflow may be stuck"
+
+msgid "Company/Organization user that owns this workflow"
+msgstr "Company/Organization user that owns this workflow"
 
 # Model Field Labels
 msgid "English name"
@@ -102,8 +180,11 @@ msgstr "English name"
 msgid "Arabic name"
 msgstr "Arabic name"
 
-msgid "Company/Organization user that owns this workflow"
-msgstr "Company/Organization user that owns this workflow"
+msgid "The original object this was cloned from"
+msgstr "The original object this was cloned from"
+
+msgid "Cloned From"
+msgstr "Cloned From"
 
 msgid "Status of the workflow"
 msgstr "Status of the workflow"
@@ -128,6 +209,13 @@ msgstr "Whether this workflow is hidden (true for cloned workflows)"
 
 msgid "Is Hidden"
 msgstr "Is Hidden"
+
+# Model Verbose Names
+msgid "Workflow"
+msgstr "Workflow"
+
+msgid "Workflows"
+msgstr "Workflows"
 
 msgid "Content type of the department model"
 msgstr "Content type of the department model"
@@ -171,91 +259,186 @@ msgstr "Current status of workflow execution"
 msgid "Additional metadata for workflow execution"
 msgstr "Additional metadata for workflow execution"
 
+#, fuzzy
+#| msgid "The model type this workflow is attached to"
+msgid "The model type that can use workflows"
+msgstr "The model type this workflow is attached to"
+
+msgid "Whether workflow functionality is enabled for this model"
+msgstr ""
+
+msgid "Whether to automatically start workflow when object is created"
+msgstr ""
+
+msgid "Default workflow to use for this model"
+msgstr ""
+
+msgid ""
+"Python path to function called before workflow starts (e.g., "
+"'myapp.hooks.pre_start')"
+msgstr ""
+
+msgid "Python path to function called after workflow completes"
+msgstr ""
+
+msgid "Field name on the model to update with workflow status"
+msgstr ""
+
+msgid "Field name on the model to store current stage"
+msgstr ""
+
+msgid ""
+"Value to set in the status_field when workflow completes successfully (e.g., "
+"'completed', 'won', 'closed')"
+msgstr ""
+
+msgid ""
+"Value to set in the status_field when workflow is rejected (e.g., "
+"'rejected', 'cancelled', 'lost')"
+msgstr ""
+
+msgid "The type of action/event that triggers this action"
+msgstr ""
+
+msgid ""
+"Python path to the function to execute (e.g., 'myapp.actions.send_email')"
+msgstr ""
+
+#, fuzzy
+#| msgid "Whether this workflow is active and can be used"
+msgid "Whether this action is active"
+msgstr "Whether this workflow is active and can be used"
+
+msgid "Workflow this action belongs to (workflow-level action)"
+msgstr ""
+
+msgid "Pipeline this action belongs to (pipeline-level action)"
+msgstr ""
+
+msgid "Stage this action belongs to (stage-level action)"
+msgstr ""
+
+msgid "Additional parameters to pass to the action function"
+msgstr ""
+
+msgid "Execution order when multiple actions exist for the same event"
+msgstr ""
+
+msgid "Action to perform on the workflow stage"
+msgstr ""
+
+msgid "Reason for rejection, delegation, or resubmission"
+msgstr ""
+
+msgid "Form data for approval (if required by stage)"
+msgstr ""
+
+msgid "User ID for delegation (required for delegation action)"
+msgstr ""
+
+msgid "Stage ID for resubmission (required for resubmission action)"
+msgstr ""
+
+msgid ""
+"Object instance is required for workflow approval. Use: "
+"WorkflowApprovalSerializer(instance=my_object, data={...})"
+msgstr ""
+
+msgid "No workflow attached to this object"
+msgstr ""
+
+#, python-brace-format
+msgid "Workflow is not in progress (current status: {status})"
+msgstr ""
+
+msgid "No current approval step found for this object"
+msgstr ""
+
+msgid "Reason is required for rejection"
+msgstr ""
+
+msgid "Reason is required for resubmission"
+msgstr ""
+
+msgid "Stage does not belong to current workflow"
+msgstr ""
+
+msgid "Invalid stage ID"
+msgstr ""
+
+msgid "Invalid user ID"
+msgstr ""
+
+msgid "Form data is required for this approval step"
+msgstr ""
+
+msgid "Object instance is required for workflow approval"
+msgstr ""
+
+#, python-brace-format
+msgid "Failed to process approval action: {error}"
+msgstr ""
+
+msgid "Number of stages to auto-create for this pipeline"
+msgstr ""
+
 # Choices
-msgid "Active"
-msgstr "Active"
+#~ msgid "Active"
+#~ msgstr "Active"
 
-msgid "Inactive"
-msgstr "Inactive"
+#~ msgid "Inactive"
+#~ msgstr "Inactive"
 
-msgid "Draft"
-msgstr "Draft"
+#~ msgid "Draft"
+#~ msgstr "Draft"
 
-msgid "Self Approved"
-msgstr "Self Approved"
+#~ msgid "Not Started"
+#~ msgstr "Not Started"
 
-msgid "Role"
-msgstr "Role"
+#~ msgid "In Progress"
+#~ msgstr "In Progress"
 
-msgid "User"
-msgstr "User"
+#~ msgid "Completed"
+#~ msgstr "Completed"
 
-msgid "Team Head"
-msgstr "Team Head"
+#~ msgid "Rejected"
+#~ msgstr "Rejected"
 
-msgid "Department Head"
-msgstr "Department Head"
+#~ msgid "Cancelled"
+#~ msgstr "Cancelled"
 
-msgid "Not Started"
-msgstr "Not Started"
+#~ msgid "After Approval"
+#~ msgstr "After Approval"
 
-msgid "In Progress"
-msgstr "In Progress"
+#~ msgid "After Rejection"
+#~ msgstr "After Rejection"
 
-msgid "Completed"
-msgstr "Completed"
+#~ msgid "After Resubmission"
+#~ msgstr "After Resubmission"
 
-msgid "Rejected"
-msgstr "Rejected"
+#~ msgid "After Delegation"
+#~ msgstr "After Delegation"
 
-msgid "Cancelled"
-msgstr "Cancelled"
+#~ msgid "After Move Stage"
+#~ msgstr "After Move Stage"
 
-msgid "After Approval"
-msgstr "After Approval"
+#~ msgid "After Move Pipeline"
+#~ msgstr "After Move Pipeline"
 
-msgid "After Rejection"
-msgstr "After Rejection"
+#~ msgid "On Workflow Start"
+#~ msgstr "On Workflow Start"
 
-msgid "After Resubmission"
-msgstr "After Resubmission"
+#~ msgid "On Workflow Complete"
+#~ msgstr "On Workflow Complete"
 
-msgid "After Delegation"
-msgstr "After Delegation"
+#~ msgid "Workflow Configuration"
+#~ msgstr "Workflow Configuration"
 
-msgid "After Move Stage"
-msgstr "After Move Stage"
+#~ msgid "Workflow Configurations"
+#~ msgstr "Workflow Configurations"
 
-msgid "After Move Pipeline"
-msgstr "After Move Pipeline"
+#~ msgid "Workflow Action"
+#~ msgstr "Workflow Action"
 
-msgid "On Workflow Start"
-msgstr "On Workflow Start"
-
-msgid "On Workflow Complete"
-msgstr "On Workflow Complete"
-
-# Model Verbose Names
-msgid "Workflow"
-msgstr "Workflow"
-
-msgid "Workflows"
-msgstr "Workflows"
-
-msgid "Workflow Configuration"
-msgstr "Workflow Configuration"
-
-msgid "Workflow Configurations"
-msgstr "Workflow Configurations"
-
-msgid "Workflow Action"
-msgstr "Workflow Action"
-
-msgid "Workflow Actions"
-msgstr "Workflow Actions"
-
-msgid "The original object this was cloned from"
-msgstr "The original object this was cloned from"
-
-msgid "Cloned From"
-msgstr "Cloned From"
+#~ msgid "Workflow Actions"
+#~ msgstr "Workflow Actions"

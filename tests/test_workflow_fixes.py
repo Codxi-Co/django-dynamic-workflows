@@ -161,15 +161,16 @@ class TestFormEnrichment:
         request = factory.post("/")
         request.META["HTTP_HOST"] = "testserver"
 
+        # Test without saving files to avoid creating test files in workflows directory
         enriched = enrich_answers(
-            form_info, answers, request=request, object_id=1, save_files=True
+            form_info, answers, request=request, object_id=1, save_files=False
         )
 
         assert len(enriched) == 1
         assert enriched[0]["field_name"] == "document"
-        # The answer should be a URL now
-        assert isinstance(enriched[0]["answer"], str)
-        assert "workflows/1/" in enriched[0]["answer"]
+        # The answer should be the uploaded file object when save_files=False
+        assert isinstance(enriched[0]["answer"], SimpleUploadedFile)
+        assert enriched[0]["answer"].name == "test.txt"
 
     def test_enrich_answers_skips_missing_fields(self):
         """Test that enrichment skips fields not in answers."""
@@ -1096,8 +1097,19 @@ class TestFormEnrichmentIntegration:
             context={"request": request},
         )
 
-        # Test the enrichment method directly
-        enriched = serializer._enrich_form_data(form_data, stage)
+        # Create a mock approval object with form
+        from unittest.mock import Mock
+
+        mock_form = Mock()
+        mock_form.form_info = stage.form_info  # Use form_info from stage
+        mock_form.id = 1
+
+        mock_approval = Mock()
+        mock_approval.form = mock_form
+        mock_approval.id = 1
+
+        # Test the enrichment method directly with mock approval
+        enriched = serializer._enrich_form_data(form_data, mock_approval)
 
         # Should have enriched all fields including nested ones
         assert isinstance(enriched, list)

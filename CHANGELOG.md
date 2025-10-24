@@ -5,6 +5,44 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2025-10-24
+
+### 🐛 Fixed
+
+- **Form Enrichment**: Fixed `_enrich_form_data` to use current approval's form instead of stage.form_info
+  - Ensures correct form is used when different approvers in the same stage have different forms
+  - Form is now retrieved from `current_approval.form.form_info` instead of `stage.form_info`
+  - Resolves issue where approval-specific forms were not being validated correctly
+
+### ✨ Enhanced
+
+- **Comprehensive Logging**: Added extensive logging to `WorkflowApprovalSerializer`
+  - Info-level logs for major milestones and successful operations
+  - Debug-level logs for detailed trace information and sub-steps
+  - Warning-level logs for non-critical issues
+  - Error-level logs for validation failures and errors
+  - Logs include workflow ID, stage name, user ID, and object details for better debugging
+
+### 🌍 Internationalization
+
+- **Arabic Translations**: Updated Arabic translations for new serializer validation messages
+  - "Reason is required for rejection" → "السبب مطلوب للرفض"
+  - "Reason is required for resubmission" → "السبب مطلوب لإعادة التقديم"
+  - "Stage does not belong to current workflow" → "المرحلة لا تنتمي إلى سير العمل الحالي"
+  - "Invalid stage ID" → "معرف المرحلة غير صالح"
+  - "Invalid user ID" → "معرف المستخدم غير صالح"
+  - "Form data is required for this approval step" → "بيانات النموذج مطلوبة لهذه خطوة الموافقة"
+  - "Object instance is required for workflow approval" → "مثيل الكائن مطلوب للموافقة على سير العمل"
+  - "Failed to process approval action" → "فشل في معالجة إجراء الموافقة"
+
+### 🧪 Testing
+
+- **Test Improvements**: Fixed file upload test to avoid creating test files in workflows directory
+  - Changed `save_files=True` to `save_files=False` in file upload tests
+  - Updated test assertions to check for uploaded file object instead of URL
+- **Mock Approval**: Updated form enrichment integration test to use mock approval object
+  - Test now properly mocks approval instance with form containing form_info
+
 ## [1.2.9] - 2025-10-18
 
 ### 🔧 Resubmission Step Numbering Fix
