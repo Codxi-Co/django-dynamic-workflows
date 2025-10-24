@@ -5,6 +5,109 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2024-10-24
+
+### ✨ Added
+
+#### Email Notification System
+- **Automatic Default Actions**: Workflows automatically get email notification actions for all events
+  - AFTER_APPROVE: Notify creator when workflow approved
+  - AFTER_REJECT: Notify creator when workflow rejected
+  - AFTER_RESUBMISSION: Notify creator and current approver about resubmission
+  - AFTER_DELEGATE: Notify delegated user and creator about delegation
+  - AFTER_MOVE_STAGE: Notify creator about stage progression
+
+- **Custom Actions via API**: Define custom actions when creating workflows, pipelines, or stages
+  - Workflow-level actions (apply to entire workflow)
+  - Pipeline-level actions (apply to specific pipeline)
+  - Stage-level actions (apply to specific stage)
+  - Action inheritance: Stage → Pipeline → Workflow → Default
+
+- **Custom Email Integration**: Support for custom email services
+  - Configure via `WORKFLOW_SEND_EMAIL_FUNCTION` setting
+  - Compatible with SendGrid, Mailgun, AWS SES, etc.
+  - Fallback to Django's EmailMultiAlternatives
+
+- **Smart Recipient Resolution**: Automatic resolution of recipient types
+  - `creator`: Object creator (object.created_by)
+  - `current_approver`: Current approval step approver(s)
+  - `delegated_to`: User receiving delegation
+  - `workflow_starter`: User who started workflow
+  - Direct email addresses
+  - User objects or User IDs
+
+- **Email Features**
+  - Email deduplication to prevent duplicate sends
+  - Bulk email processing for efficiency
+  - HTML email templates with base template
+  - Context-rich emails with workflow information
+
+#### New Components (6 modules)
+- `action_executor.py`: Execute workflow actions based on events
+- `action_handlers.py`: Default email notification handlers
+- `action_management.py`: Action creation, cloning, and management utilities
+- `notifications.py`: Email sending service with context building
+- `recipient_resolver.py`: Recipient type resolution
+- `WorkflowActionInputSerializer`: Structured action input for Swagger/OpenAPI
+
+#### Email Templates (6 templates)
+- `base.html`: Base template for all workflow emails
+- `workflow_approved.html`: Approval notification
+- `workflow_rejected.html`: Rejection notification
+- `workflow_action_required.html`: Stage progression notification
+- `workflow_delegated.html`: Delegation notification
+- `workflow_resubmission_required.html`: Resubmission notification
+
+#### Configuration Settings
+```python
+WORKFLOW_AUTO_CREATE_ACTIONS = True  # Auto-create default actions
+WORKFLOW_DISABLE_EMAILS = False      # Globally disable emails
+WORKFLOW_SEND_EMAIL_FUNCTION = 'myapp.utils.send_email'  # Custom function
+```
+
+#### API Enhancements
+- **WorkFlowSerializer**: Added optional `actions` field
+- **PipelineSerializer**: Added optional `actions` field
+- **StageSerializer**: Added optional `actions` field
+- All action fields use `WorkflowActionInputSerializer` for clear API documentation
+
+### 🎨 Changed
+
+#### Admin Interface
+- **Performance**: Removed workflow-related filters for better performance with large datasets
+- **WorkflowAction Admin**: Enhanced scope display (Workflow/Pipeline/Stage)
+- **Query Optimization**: Improved admin queries with select_related
+
+### 📚 Documentation
+
+- **README**: Added comprehensive "Email Notifications & Custom Actions" section
+  - Configuration examples
+  - Custom email function integration guide
+  - Writing custom action handlers
+  - Recipient types documentation
+  - Testing with mocks
+  - Best practices
+
+### 🧪 Testing
+
+- **New Tests**: 22 new tests (all passing)
+  - 21 email notification tests
+  - 1 workflow flow email integration test
+- **Total Tests**: 307 (100% passing)
+- **Test Coverage**: Comprehensive mocking for email testing
+
+### 📊 Statistics
+
+- **Files Added**: 12 (6 modules, 6 templates, 1 documentation)
+- **Lines Added**: 3,798
+- **Backwards Compatible**: Yes (all new features are optional)
+
+### 🔄 Migration Notes
+
+- **Existing Users**: No action required - all changes are backwards compatible
+- **New Users**: Email notifications work out-of-the-box with default actions
+- **Optional**: Configure custom email function or disable auto-creation as needed
+
 ## [1.3.1] - 2025-10-24
 
 ### 🐛 Fixed

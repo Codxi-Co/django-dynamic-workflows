@@ -1,0 +1,39 @@
+{% extends "django_workflow_engine/emails/base.html" %}
+
+{% block title %}Resubmission Required - {{ workflow_name }}{% endblock %}
+
+{% block content %}
+<h1>🔄 Resubmission Required</h1>
+
+<p>Hello {% if recipient_name %}{{ recipient_name }}{% else %}there{% endif %},</p>
+
+<p>A resubmission has been requested for your workflow.</p>
+
+<div class="info-box">
+    <p><strong>Workflow:</strong> {{ workflow_name }}</p>
+    <p><strong>Object:</strong> {{ object_name }}</p>
+    {% if stage_name %}
+    <p><strong>Current Stage:</strong> {{ stage_name }}</p>
+    {% endif %}
+    {% if resubmission_stage %}
+    <p><strong>Resubmit to Stage:</strong> {{ resubmission_stage }}</p>
+    {% endif %}
+    {% if actor_name %}
+    <p><strong>Requested by:</strong> {{ actor_name }}</p>
+    {% endif %}
+    {% if resubmission_comments %}
+    <p><strong>Comments:</strong> {{ resubmission_comments }}</p>
+    {% endif %}
+    {% if due_date %}
+    <p><strong>Due Date:</strong> {{ due_date }}</p>
+    {% endif %}
+</div>
+
+{% if object_link %}
+<p style="text-align: center;">
+    <a href="{{ object_link }}" class="button warning">View & Resubmit</a>
+</p>
+{% endif %}
+
+<p>Please review the comments and resubmit the required information.</p>
+{% endblock %}

@@ -1353,6 +1353,325 @@ def monitor_workflow_performance():
     }
 ```
 
+## Email Notifications & Custom Actions
+
+The Django Workflow Engine provides a powerful and flexible email notification system with automatic action creation, custom email functions, and action inheritance.
+
+### Features
+
+- **Automatic Default Actions**: Automatically create email notification actions for all workflow events
+- **Custom Actions via API**: Define custom actions when creating workflows, pipelines, or stages via REST API
+- **Action Inheritance**: Stage → Pipeline → Workflow hierarchy for flexible configuration
+- **Custom Email Functions**: Integrate your own email sending service (SendGrid, Mailgun, etc.)
+- **Recipient Resolution**: Smart resolution of recipients (creator, current_approver, delegated_to, etc.)
+- **Email Deduplication**: Prevent duplicate emails to the same recipient
+
+### Configuration Settings
+
+```python
+# settings.py
+
+# Enable automatic creation of default email actions (default: True)
+WORKFLOW_AUTO_CREATE_ACTIONS = True
+
+# Disable email sending globally (default: False)
+WORKFLOW_DISABLE_EMAILS = False
+
+# Custom email function path (optional)
+WORKFLOW_SEND_EMAIL_FUNCTION = 'myapp.utils.send_email'
+```
+
+### Default Actions
+
+When a workflow is created with `WORKFLOW_AUTO_CREATE_ACTIONS=True`, the following default actions are automatically created:
+
+| Action Type | When Triggered | Default Recipients | Purpose |
+|-------------|----------------|-------------------|---------|
+| `AFTER_APPROVE` | After approval | Creator | Notify creator of approval |
+| `AFTER_REJECT` | After rejection | Creator | Notify creator of rejection |
+| `AFTER_RESUBMISSION` | Resubmission required | Creator, Current Approver | Notify about required changes |
+| `AFTER_DELEGATE` | Approval delegated | Delegated To, Creator | Notify about delegation |
+| `AFTER_MOVE_STAGE` | Stage progression | Creator | Notify about workflow progress |
+
+### Custom Actions via API
+
+You can define custom actions when creating workflows, pipelines, or stages using the REST API:
+
+```python
+# Create workflow with custom actions
+workflow_data = {
+    "name_en": "Purchase Request",
+    "name_ar": "طلب شراء",
+    "company": company_id,
+    "status": "active",
+    "actions": [
+        {
+            "action_type": "after_approve",
+            "function_path": "myapp.actions.send_custom_approval",
+            "parameters": {
+                "template": "custom_approved",
+                "recipients": ["creator", "manager@example.com"],
+                "subject": "Custom Approval Notification"
+            },
+            "order": 1,
+            "is_active": True
+        },
+        {
+            "action_type": "after_reject",
+            "function_path": "myapp.actions.send_custom_rejection",
+            "parameters": {
+                "template": "custom_rejected",
+                "recipients": ["creator"],
+                "cc": ["supervisor@example.com"]
+            },
+            "order": 1,
+            "is_active": True
+        }
+    ],
+    "pipelines": [
+        {
+            "name_en": "Finance Review",
+            "order": 0,
+            "actions": [  # Pipeline-level custom actions
+                {
+                    "action_type": "after_move_stage",
+                    "function_path": "myapp.actions.notify_finance_team",
+                    "parameters": {"team_email": "finance@example.com"},
+                    "order": 1
+                }
+            ],
+            "stages": [
+                {
+                    "name_en": "Budget Approval",
+                    "order": 0,
+                    "actions": [  # Stage-level custom actions
+                        {
+                            "action_type": "after_approve",
+                            "function_path": "myapp.actions.update_budget_system",
+                            "parameters": {"api_endpoint": "/api/budget/update"},
+                            "order": 1
+                        }
+                    ]
+                }
+            ]
+        }
+    ]
+}
+
+# POST to /api/workflows/
+serializer = WorkFlowSerializer(data=workflow_data)
+if serializer.is_valid():
+    workflow = serializer.save()
+```
+
+### Action Inheritance
+
+Actions follow a hierarchical inheritance model:
+
+1. **Stage-level actions** (highest priority): Execute if defined for the specific stage
+2. **Pipeline-level actions**: Execute if no stage actions and pipeline actions exist
+3. **Workflow-level actions**: Execute if no stage or pipeline actions exist
+4. **Default actions**: Created automatically if no custom actions at any level
+
+Example:
+```python
+# If Stage 1 has custom actions → Execute Stage 1 actions only
+# If Stage 1 has NO actions but Pipeline 1 has actions → Execute Pipeline 1 actions
+# If neither Stage 1 nor Pipeline 1 have actions → Execute Workflow-level actions
+# If no actions at any level → Execute default actions (if auto-create enabled)
+```
+
+### Custom Email Functions
+
+Integrate your own email service by providing a custom email function:
+
+```python
+# myapp/utils.py
+def send_email(name, email, subject, context, user=None):
+    """
+    Custom email function compatible with django-workflow-engine.
+
+    Args:
+        name: Email template name
+        email: Recipient email address
+        subject: Email subject
+        context: Dict with workflow context (workflow_name, stage_name, etc.)
+        user: Optional user object
+    """
+    # Example: SendGrid integration
+    import sendgrid
+    from sendgrid.helpers.mail import Mail
+
+    sg = sendgrid.SendGridAPIClient(api_key=os.environ.get('SENDGRID_API_KEY'))
+
+    message = Mail(
+        from_email='noreply@company.com',
+        to_emails=email,
+        subject=subject,
+        html_content=render_template(name, context)
+    )
+
+    try:
+        response = sg.send(message)
+        return response.status_code == 202
+    except Exception as e:
+        logger.error(f"SendGrid error: {e}")
+        return False
+
+# settings.py
+WORKFLOW_SEND_EMAIL_FUNCTION = 'myapp.utils.send_email'
+```
+
+### Writing Custom Action Handlers
+
+Create custom action handlers that integrate with external systems:
+
+```python
+# myapp/actions.py
+def send_custom_approval(workflow_attachment, action_parameters, **context):
+    """
+    Custom action handler for approval notifications.
+
+    Args:
+        workflow_attachment: WorkflowAttachment instance
+        action_parameters: Dict from action configuration
+        **context: Additional context (user, stage, reason, etc.)
+
+    Returns:
+        bool: True if action succeeded
+    """
+    from django_workflow_engine.notifications import send_bulk_workflow_emails
+    from django_workflow_engine.recipient_resolver import resolve_recipients
+
+    # Get parameters
+    template = action_parameters.get('template', 'default_template')
+    recipient_types = action_parameters.get('recipients', ['creator'])
+    subject = action_parameters.get('subject', 'Workflow Update')
+
+    # Resolve recipients
+    email_addresses = resolve_recipients(
+        recipient_types=recipient_types,
+        workflow_attachment=workflow_attachment,
+        **context
+    )
+
+    if not email_addresses:
+        return False
+
+    # Build context
+    email_context = {
+        'workflow_name': workflow_attachment.workflow.name_en,
+        'current_stage': workflow_attachment.current_stage.name_en if workflow_attachment.current_stage else 'N/A',
+        'user': context.get('user'),
+        'custom_field': action_parameters.get('custom_field'),
+    }
+
+    # Send emails
+    result = send_bulk_workflow_emails(
+        name=template,
+        recipients=list(email_addresses),
+        context=email_context,
+        deduplicate=False
+    )
+
+    return result['sent'] > 0
+
+
+def update_external_system(workflow_attachment, action_parameters, **context):
+    """Example: Update external CRM system."""
+    import requests
+
+    api_endpoint = action_parameters.get('api_endpoint')
+    api_key = action_parameters.get('api_key')
+
+    try:
+        response = requests.post(
+            api_endpoint,
+            json={
+                'workflow_id': workflow_attachment.workflow.id,
+                'status': workflow_attachment.status,
+                'stage': workflow_attachment.current_stage.name_en if workflow_attachment.current_stage else None,
+            },
+            headers={'Authorization': f'Bearer {api_key}'}
+        )
+        return response.status_code == 200
+    except Exception as e:
+        logger.error(f"External system update failed: {e}")
+        return False
+```
+
+### Recipient Types
+
+The system supports several recipient types that are automatically resolved:
+
+| Recipient Type | Resolves To |
+|----------------|-------------|
+| `"creator"` | User who created the attached object (object.created_by) |
+| `"current_approver"` | Current approval step approver(s) |
+| `"delegated_to"` | User to whom approval was delegated |
+| `"workflow_starter"` | User who started the workflow |
+| `"user@example.com"` | Direct email address |
+| User object | Direct user object |
+| User ID (int) | User by ID |
+
+Example:
+```python
+{
+    "recipients": [
+        "creator",                    # Resolves to object.created_by.email
+        "current_approver",           # Resolves to current approval user(s)
+        "manager@company.com",        # Direct email
+        "delegated_to"                # From delegation context
+    ]
+}
+```
+
+### Managing Actions in Django Admin
+
+Actions can be managed through the Django admin interface:
+
+1. Navigate to **Django Workflow Engine → Workflow Actions**
+2. Create new action or edit existing
+3. Select scope: Workflow, Pipeline, or Stage
+4. Choose action type and set function path
+5. Configure parameters as JSON
+6. Set execution order and active status
+
+### Testing Email Notifications
+
+Use the provided test mocks to test email notifications without sending actual emails:
+
+```python
+from unittest.mock import patch
+from django.test import TestCase
+
+class WorkflowEmailTest(TestCase):
+    @patch('django_workflow_engine.action_handlers.send_approval_notification')
+    def test_approval_sends_email(self, mock_handler):
+        # Mock the handler to return success
+        mock_handler.return_value = True
+
+        # Execute workflow approval
+        serializer = WorkflowApprovalSerializer(
+            instance=my_object,
+            data={'action': 'approved'},
+            context={'request': request}
+        )
+        serializer.save()
+
+        # Verify handler was called
+        self.assertTrue(mock_handler.called)
+```
+
+### Best Practices
+
+1. **Use Action Inheritance**: Define common actions at workflow level, specific ones at stage level
+2. **Enable Auto-Creation**: Let the system create default actions, override only where needed
+3. **Custom Email Functions**: Use for integration with your email service provider
+4. **Idempotent Handlers**: Ensure action handlers can be safely re-executed
+5. **Error Handling**: Return `False` from handlers on failure for proper logging
+6. **Testing**: Always test with mocked email sending to avoid actual emails during tests
+
 ## Dependencies
 
 - Django >= 4.0

@@ -1,0 +1,39 @@
+{% extends "django_workflow_engine/emails/base.html" %}
+
+{% block title %}Workflow Delegated - {{ workflow_name }}{% endblock %}
+
+{% block content %}
+<h1>👥 Workflow Delegated</h1>
+
+<p>Hello {% if recipient_name %}{{ recipient_name }}{% else %}there{% endif %},</p>
+
+<p>A workflow approval has been delegated to you.</p>
+
+<div class="info-box">
+    <p><strong>Workflow:</strong> {{ workflow_name }}</p>
+    <p><strong>Object:</strong> {{ object_name }}</p>
+    {% if stage_name %}
+    <p><strong>Stage:</strong> {{ stage_name }}</p>
+    {% endif %}
+    {% if delegated_by %}
+    <p><strong>Delegated by:</strong> {{ delegated_by }}</p>
+    {% endif %}
+    {% if requester_name %}
+    <p><strong>Original Requester:</strong> {{ requester_name }}</p>
+    {% endif %}
+    {% if delegation_reason %}
+    <p><strong>Reason:</strong> {{ delegation_reason }}</p>
+    {% endif %}
+    {% if due_date %}
+    <p><strong>Due Date:</strong> {{ due_date }}</p>
+    {% endif %}
+</div>
+
+{% if object_link %}
+<p style="text-align: center;">
+    <a href="{{ object_link }}" class="button">Review & Approve</a>
+</p>
+{% endif %}
+
+<p>Please review and take the necessary action on this workflow.</p>
+{% endblock %}

@@ -1007,7 +1007,28 @@ def trigger_workflow_event(
         f"Triggering workflow event {action_type} for {attachment.target._meta.label}({attachment.target.pk})"
     )
 
-    return execute_workflow_actions(attachment, action_type, context)
+    # Execute legacy workflow actions
+    results = execute_workflow_actions(attachment, action_type, context)
+
+    # Execute new email notification actions with inheritance support
+    try:
+        from .action_executor import execute_workflow_actions as execute_email_actions
+
+        email_results = execute_email_actions(
+            action_type=action_type, workflow_attachment=attachment, **context_kwargs
+        )
+
+        logger.debug(
+            f"Email notification actions executed - "
+            f"Succeeded: {email_results.get('succeeded', 0)}, "
+            f"Failed: {email_results.get('failed', 0)}"
+        )
+    except Exception as e:
+        logger.error(
+            f"Failed to execute email notification actions: {e}", exc_info=True
+        )
+
+    return results
 
 
 # New functions for workflow-to-model mapping and settings integration
