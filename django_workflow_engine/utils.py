@@ -384,11 +384,24 @@ def flatten_form_info(form_info: List[Dict], submitted_data: dict) -> List[Dict]
         trigger_choice = choice_form.get("choice")
         submitted_value = submitted_data.get(field["field_name"])
 
+        # Normalize trigger_choice and submitted_value to strings for comparison
+        # This handles cases where choice is int (1) but submitted value is string ("1")
+        trigger_choice_str = str(trigger_choice) if trigger_choice is not None else None
+
         # Determine if the conditional form should be triggered
-        should_trigger = (
-            ftype in ("MULTI_CHOICE", "CHECKBOX")
-            and trigger_choice in (submitted_value or [])
-        ) or (ftype == "DROP_DOWN" and trigger_choice == submitted_value)
+        should_trigger = False
+        if ftype in ("MULTI_CHOICE", "CHECKBOX"):
+            # For multi-choice, submitted_value is a list
+            if submitted_value:
+                # Normalize submitted values to strings for comparison
+                submitted_values_str = [str(v) for v in (submitted_value or [])]
+                should_trigger = trigger_choice_str in submitted_values_str
+        elif ftype == "DROP_DOWN":
+            # For dropdown, submitted_value is a single value
+            submitted_value_str = (
+                str(submitted_value) if submitted_value is not None else None
+            )
+            should_trigger = trigger_choice_str == submitted_value_str
 
         if should_trigger:
             subform = choice_form.get("form")

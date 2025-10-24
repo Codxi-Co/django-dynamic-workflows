@@ -185,6 +185,184 @@ class TestFormEnrichment:
         assert len(enriched) == 1  # Only name is included
         assert enriched[0]["field_name"] == "name"
 
+    def test_nested_form_multi_choice_with_int_choice(self):
+        """Test nested conditional form with MULTI_CHOICE and integer choice value."""
+        form_info = [
+            {
+                "field_name": "Gender",
+                "field_type": "MULTI_CHOICE",
+                "is_required": False,
+                "extra_info": {
+                    "choices": [{"1": "Male"}, {"2": "Female"}],
+                    "choice_form": {
+                        "choice": 1,  # Integer choice
+                        "form": {
+                            "field_name": "Name",
+                            "field_type": "TEXT",
+                            "is_required": False,
+                            "extra_info": {"choices": []},
+                        },
+                    },
+                },
+            }
+        ]
+
+        # Submitted data with string values in array (as from frontend)
+        submitted_data = {"Gender": ["1"], "Name": "John Doe"}
+
+        # Flatten the form to include nested fields
+        from django_workflow_engine.utils import flatten_form_info
+
+        flattened = flatten_form_info(form_info, submitted_data)
+
+        # Should include both Gender and Name fields
+        assert len(flattened) == 2
+        field_names = [f["field_name"] for f in flattened]
+        assert "Gender" in field_names
+        assert "Name" in field_names
+
+        # Now enrich with answers
+        enriched = enrich_answers(flattened, submitted_data, save_files=False)
+
+        # Should have both fields with answers
+        assert len(enriched) == 2
+        gender_field = next(f for f in enriched if f["field_name"] == "Gender")
+        name_field = next(f for f in enriched if f["field_name"] == "Name")
+
+        assert gender_field["answer"] == ["1"]
+        assert name_field["answer"] == "John Doe"
+
+    def test_nested_form_dropdown_with_string_choice(self):
+        """Test nested conditional form with DROP_DOWN and string choice value."""
+        form_info = [
+            {
+                "field_name": "department",
+                "field_type": "DROP_DOWN",
+                "extra_info": {
+                    "choices": ["IT", "HR", "Finance"],
+                    "choice_form": {
+                        "choice": "IT",  # String choice
+                        "form": {
+                            "field_name": "it_budget",
+                            "field_type": "NUMBER",
+                        },
+                    },
+                },
+            }
+        ]
+
+        submitted_data = {"department": "IT", "it_budget": 50000}
+
+        from django_workflow_engine.utils import flatten_form_info
+
+        flattened = flatten_form_info(form_info, submitted_data)
+
+        # Should include both department and it_budget
+        assert len(flattened) == 2
+        field_names = [f["field_name"] for f in flattened]
+        assert "department" in field_names
+        assert "it_budget" in field_names
+
+        enriched = enrich_answers(flattened, submitted_data, save_files=False)
+
+        assert len(enriched) == 2
+        dept_field = next(f for f in enriched if f["field_name"] == "department")
+        budget_field = next(f for f in enriched if f["field_name"] == "it_budget")
+
+        assert dept_field["answer"] == "IT"
+        assert budget_field["answer"] == 50000
+
+    def test_nested_form_not_triggered_when_different_choice(self):
+        """Test that nested form is NOT included when different choice is selected."""
+        form_info = [
+            {
+                "field_name": "Gender",
+                "field_type": "MULTI_CHOICE",
+                "extra_info": {
+                    "choices": [{"1": "Male"}, {"2": "Female"}],
+                    "choice_form": {
+                        "choice": 1,  # Only triggers for Male
+                        "form": {
+                            "field_name": "Name",
+                            "field_type": "TEXT",
+                        },
+                    },
+                },
+            }
+        ]
+
+        # User selected Female (2), not Male (1)
+        submitted_data = {"Gender": ["2"]}
+
+        from django_workflow_engine.utils import flatten_form_info
+
+        flattened = flatten_form_info(form_info, submitted_data)
+
+        # Should only include Gender, not Name
+        assert len(flattened) == 1
+        assert flattened[0]["field_name"] == "Gender"
+
+    def test_nested_form_multi_level_nesting(self):
+        """Test multiple levels of nested conditional forms."""
+        form_info = [
+            {
+                "field_name": "category",
+                "field_type": "DROP_DOWN",
+                "extra_info": {
+                    "choices": ["Tech", "Non-Tech"],
+                    "choice_form": {
+                        "choice": "Tech",
+                        "form": {
+                            "field_name": "tech_type",
+                            "field_type": "DROP_DOWN",
+                            "extra_info": {
+                                "choices": ["Software", "Hardware"],
+                                "choice_form": {
+                                    "choice": "Software",
+                                    "form": {
+                                        "field_name": "programming_language",
+                                        "field_type": "TEXT",
+                                    },
+                                },
+                            },
+                        },
+                    },
+                },
+            }
+        ]
+
+        submitted_data = {
+            "category": "Tech",
+            "tech_type": "Software",
+            "programming_language": "Python",
+        }
+
+        from django_workflow_engine.utils import flatten_form_info
+
+        flattened = flatten_form_info(form_info, submitted_data)
+
+        # Should include all 3 fields
+        assert len(flattened) == 3
+        field_names = [f["field_name"] for f in flattened]
+        assert "category" in field_names
+        assert "tech_type" in field_names
+        assert "programming_language" in field_names
+
+        enriched = enrich_answers(flattened, submitted_data, save_files=False)
+
+        assert len(enriched) == 3
+        assert any(
+            f["field_name"] == "category" and f["answer"] == "Tech" for f in enriched
+        )
+        assert any(
+            f["field_name"] == "tech_type" and f["answer"] == "Software"
+            for f in enriched
+        )
+        assert any(
+            f["field_name"] == "programming_language" and f["answer"] == "Python"
+            for f in enriched
+        )
+
 
 @pytest.mark.django_db
 class TestProgressCalculation:

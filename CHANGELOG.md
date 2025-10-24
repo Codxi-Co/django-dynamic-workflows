@@ -5,6 +5,27 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2025-10-24
+
+### 🐛 Fixed
+
+- **Nested Conditional Forms**: Fixed type mismatch in `flatten_form_info` for nested form triggers
+  - Resolves issue where nested forms were not being included when choice values had type mismatches
+  - Now handles cases where `choice` is integer (e.g., `1`) but submitted value is string (e.g., `"1"`)
+  - Properly normalizes both `trigger_choice` and `submitted_value` to strings for comparison
+  - Fixes MULTI_CHOICE fields with integer choice values not triggering nested forms
+  - Fixes DROP_DOWN fields with type mismatches between choice and submitted value
+  - Example: Gender field with choice `1` (int) now correctly triggers when user submits `["1"]` (string array)
+
+### 🧪 Testing
+
+- **Nested Form Tests**: Added comprehensive test cases for nested conditional forms
+  - Test MULTI_CHOICE with integer choice values triggering nested forms
+  - Test DROP_DOWN with string choice values triggering nested forms
+  - Test that nested forms are NOT triggered when different choice is selected
+  - Test multi-level nested conditional forms (3+ levels deep)
+  - All tests verify both flattening and answer enrichment work correctly
+
 ## [1.3.0] - 2025-10-24
 
 ### 🐛 Fixed
@@ -37,6 +58,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### 🧪 Testing
 
+- **Nested Form Tests**: Added comprehensive test cases for nested conditional forms
+  - Test MULTI_CHOICE with integer choice values triggering nested forms
+  - Test DROP_DOWN with string choice values triggering nested forms
+  - Test that nested forms are NOT triggered when different choice is selected
+  - Test multi-level nested conditional forms (3+ levels deep)
+  - All tests verify both flattening and answer enrichment work correctly
 - **Test Improvements**: Fixed file upload test to avoid creating test files in workflows directory
   - Changed `save_files=True` to `save_files=False` in file upload tests
   - Updated test assertions to check for uploaded file object instead of URL
