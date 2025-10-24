@@ -1,0 +1,36 @@
+{% extends "django_workflow_engine/emails/base.html" %}
+
+{% block title %}Action Required - {{ workflow_name }}{% endblock %}
+
+{% block content %}
+<h1>⚠️ Action Required</h1>
+
+<p>Hello {% if recipient_name %}{{ recipient_name }}{% else %}there{% endif %},</p>
+
+<p>Your attention is required for a workflow approval.</p>
+
+<div class="info-box">
+    <p><strong>Workflow:</strong> {{ workflow_name }}</p>
+    <p><strong>Object:</strong> {{ object_name }}</p>
+    {% if stage_name %}
+    <p><strong>Current Stage:</strong> {{ stage_name }}</p>
+    {% endif %}
+    {% if requester_name %}
+    <p><strong>Requester:</strong> {{ requester_name }}</p>
+    {% endif %}
+    {% if action_description %}
+    <p><strong>Action:</strong> {{ action_description }}</p>
+    {% endif %}
+    {% if due_date %}
+    <p><strong>Due Date:</strong> {{ due_date }}</p>
+    {% endif %}
+</div>
+
+{% if object_link %}
+<p style="text-align: center;">
+    <a href="{{ object_link }}" class="button">Take Action</a>
+</p>
+{% endif %}
+
+<p>Please review and take the necessary action as soon as possible.</p>
+{% endblock %}

@@ -1,0 +1,33 @@
+{% extends "django_workflow_engine/emails/base.html" %}
+
+{% block title %}Workflow Approved - {{ workflow_name }}{% endblock %}
+
+{% block content %}
+<h1>✅ Workflow Approved</h1>
+
+<p>Hello {% if recipient_name %}{{ recipient_name }}{% else %}there{% endif %},</p>
+
+<p>Good news! Your workflow has been approved.</p>
+
+<div class="info-box">
+    <p><strong>Workflow:</strong> {{ workflow_name }}</p>
+    <p><strong>Object:</strong> {{ object_name }}</p>
+    {% if stage_name %}
+    <p><strong>Stage:</strong> {{ stage_name }}</p>
+    {% endif %}
+    {% if actor_name %}
+    <p><strong>Approved by:</strong> {{ actor_name }}</p>
+    {% endif %}
+    {% if comments %}
+    <p><strong>Comments:</strong> {{ comments }}</p>
+    {% endif %}
+</div>
+
+{% if object_link %}
+<p style="text-align: center;">
+    <a href="{{ object_link }}" class="button success">View Details</a>
+</p>
+{% endif %}
+
+<p>The workflow will now progress to the next stage.</p>
+{% endblock %}

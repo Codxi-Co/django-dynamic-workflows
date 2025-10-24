@@ -211,6 +211,28 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
             "can_be_activated": is_valid and self.status == WorkflowStatus.ACTIVE,
         }
 
+    def save(self, *args, **kwargs):
+        """Override save to auto-create default workflow actions for new workflows."""
+        from django.conf import settings
+
+        is_new = self.pk is None
+        super().save(*args, **kwargs)
+
+        # Auto-create default actions for new workflows if enabled in settings
+        if is_new and getattr(settings, "WORKFLOW_AUTO_CREATE_ACTIONS", True):
+            try:
+                from .action_management import create_default_workflow_actions
+
+                actions = create_default_workflow_actions(self)
+                logger.info(
+                    f"Auto-created {len(actions)} default workflow actions for workflow {self.id}"
+                )
+            except Exception as e:
+                logger.error(
+                    f"Failed to auto-create default workflow actions for workflow {self.id}: {e}",
+                    exc_info=True,
+                )
+
     def clone(self, modified_keys=None, overrides=None):
         logger.info(f"Starting clone process for WorkFlow: {self.id} ({self.name_en})")
 
@@ -291,6 +313,24 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
             if stages_to_create:
                 created_stages = Stage.objects.bulk_create(stages_to_create)
                 logger.info(f"Bulk created {len(created_stages)} stages")
+
+            # Clone workflow actions
+            try:
+                from .action_management import clone_workflow_actions
+
+                action_counts = clone_workflow_actions(
+                    source_workflow=self,
+                    target_workflow=cloned_workflow,
+                    pipeline_mapping=pipeline_mapping,
+                )
+                logger.info(
+                    f"Cloned workflow actions - "
+                    f"Workflow: {action_counts['workflow']}, "
+                    f"Pipeline: {action_counts['pipeline']}, "
+                    f"Stage: {action_counts['stage']}"
+                )
+            except Exception as e:
+                logger.error(f"Failed to clone workflow actions: {e}", exc_info=True)
 
         logger.info(
             f"Clone process completed successfully for WorkFlow: {cloned_workflow.id}"

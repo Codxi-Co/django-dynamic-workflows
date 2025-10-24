@@ -1,0 +1,33 @@
+{% extends "django_workflow_engine/emails/base.html" %}
+
+{% block title %}Workflow Rejected - {{ workflow_name }}{% endblock %}
+
+{% block content %}
+<h1>❌ Workflow Rejected</h1>
+
+<p>Hello {% if recipient_name %}{{ recipient_name }}{% else %}there{% endif %},</p>
+
+<p>Unfortunately, your workflow has been rejected.</p>
+
+<div class="info-box">
+    <p><strong>Workflow:</strong> {{ workflow_name }}</p>
+    <p><strong>Object:</strong> {{ object_name }}</p>
+    {% if stage_name %}
+    <p><strong>Stage:</strong> {{ stage_name }}</p>
+    {% endif %}
+    {% if actor_name %}
+    <p><strong>Rejected by:</strong> {{ actor_name }}</p>
+    {% endif %}
+    {% if rejection_reason %}
+    <p><strong>Reason:</strong> {{ rejection_reason }}</p>
+    {% endif %}
+</div>
+
+{% if object_link %}
+<p style="text-align: center;">
+    <a href="{{ object_link }}" class="button danger">View Details</a>
+</p>
+{% endif %}
+
+<p>Please review the rejection reason and take appropriate action.</p>
+{% endblock %}

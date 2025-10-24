@@ -12,7 +12,7 @@ from approval_workflow.services import advance_flow, get_current_approval_for_ob
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from .choices import ApprovalTypes
+from .choices import ActionType, ApprovalTypes
 from .logging_utils import log_serializer_validation, serializers_logger
 from .models import Pipeline, Stage, WorkFlow, WorkflowAttachment
 from .services import create_workflow, get_workflow_attachment
@@ -34,6 +34,55 @@ class GenericForeignKeyField(serializers.Field):
         # This would be used for write operations
         # For now, we'll make it read-only
         raise serializers.ValidationError("This field is read-only.")
+
+
+class WorkflowActionInputSerializer(serializers.Serializer):
+    """
+    Serializer for workflow action input data.
+
+    Used to define the structure of custom actions when creating workflows,
+    pipelines, or stages. This makes the API documentation clearer in Swagger.
+
+    Example:
+        {
+            "action_type": "after_approve",
+            "function_path": "myapp.actions.send_custom_approval",
+            "parameters": {
+                "template": "custom_approved",
+                "recipients": ["creator", "manager@example.com"]
+            },
+            "order": 1,
+            "is_active": true
+        }
+    """
+
+    action_type = serializers.ChoiceField(
+        choices=ActionType,
+        help_text=_("The type of action trigger"),
+    )
+    function_path = serializers.CharField(
+        max_length=255,
+        help_text=_(
+            "Dotted path to the action handler function (e.g., 'myapp.actions.send_email')"
+        ),
+    )
+    parameters = serializers.JSONField(
+        required=False,
+        default=dict,
+        help_text=_(
+            "Parameters to pass to the action handler (e.g., template, recipients, subject)"
+        ),
+    )
+    order = serializers.IntegerField(
+        required=False,
+        default=1,
+        help_text=_("Execution order when multiple actions exist for the same trigger"),
+    )
+    is_active = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text=_("Whether this action is active and should be executed"),
+    )
 
 
 class WorkflowApprovalSerializer(serializers.Serializer):
@@ -908,10 +957,12 @@ class WorkFlowListSerializer(serializers.ModelSerializer):
 
 
 class PipelineSerializer(serializers.ModelSerializer):
-    """Serializer for creating/updating Pipeline with auto-generated stages.
+    """Serializer for creating/updating Pipeline with auto-generated stages and custom actions.
 
     Note: Override fields in your implementation as needed.
     created_by is automatically set from request context.
+
+    Actions field format: Same as WorkFlowSerializer
     """
 
     number_of_stages = serializers.IntegerField(
@@ -919,6 +970,14 @@ class PipelineSerializer(serializers.ModelSerializer):
         required=False,
         min_value=1,
         help_text=_("Number of stages to auto-create for this pipeline"),
+    )
+    actions = serializers.ListField(
+        child=WorkflowActionInputSerializer(),
+        required=False,
+        write_only=True,
+        help_text=_(
+            "Custom actions for this pipeline. If not provided, workflow-level actions will be inherited."
+        ),
     )
 
     class Meta:
@@ -938,8 +997,10 @@ class PipelineSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        """Create pipeline with auto-generated stages."""
+        """Create pipeline with auto-generated stages and custom actions."""
         number_of_stages = validated_data.pop("number_of_stages", 0)
+        actions_data = validated_data.pop("actions", None)
+
         pipeline = Pipeline.objects.create(**validated_data)
 
         # Auto-create stages if number_of_stages is provided
@@ -953,18 +1014,49 @@ class PipelineSerializer(serializers.ModelSerializer):
                     stage_info={"approvals": [], "color": "#3498db"},
                 )
 
+        # Handle actions
+        if actions_data:
+            from .action_management import create_custom_workflow_actions
+
+            create_custom_workflow_actions(actions_data, pipeline=pipeline)
+            logger.info(
+                f"Created {len(actions_data)} custom actions for pipeline {pipeline.id}"
+            )
+
         return pipeline
 
 
 class WorkFlowSerializer(serializers.ModelSerializer):
-    """Serializer for creating/updating WorkFlow with nested pipelines.
+    """Serializer for creating/updating WorkFlow with nested pipelines and custom actions.
 
     Note: Override fields in your implementation as needed.
     created_by is automatically set from request context.
     company is automatically set from context if not provided.
+
+    Actions field format:
+        actions = [
+            {
+                'action_type': 'after_approve',  # ActionType choice
+                'function_path': 'myapp.actions.send_custom_email',
+                'parameters': {
+                    'template': 'custom_approved',
+                    'recipients': ['creator', 'user@example.com']
+                },
+                'order': 1,
+                'is_active': True
+            }
+        ]
     """
 
     pipelines = PipelineSerializer(many=True, required=False)
+    actions = serializers.ListField(
+        child=WorkflowActionInputSerializer(),
+        required=False,
+        write_only=True,
+        help_text=_(
+            "Custom actions for this workflow. If not provided, default actions will be created."
+        ),
+    )
 
     class Meta:
         model = WorkFlow
@@ -982,8 +1074,11 @@ class WorkFlowSerializer(serializers.ModelSerializer):
         }
 
     def create(self, validated_data):
-        """Create workflow with nested pipelines and stages using service function."""
+        """Create workflow with nested pipelines, stages, and custom actions."""
+        from django.conf import settings
+
         pipelines_data = validated_data.pop("pipelines", [])
+        actions_data = validated_data.pop("actions", None)
 
         # Get company from context if not provided
         company = validated_data.pop("company", None)
@@ -1000,21 +1095,47 @@ class WorkFlowSerializer(serializers.ModelSerializer):
         description = validated_data.pop("description", "")
         is_active = validated_data.pop("is_active", True)
 
-        # Use the existing create_workflow service function
-        workflow = create_workflow(
-            company=company,
-            name_en=name_en,
-            name_ar=name_ar,
-            created_by=created_by,
-            pipelines_data=pipelines_data,
-        )
+        # Temporarily disable auto-creation of default actions
+        # (we'll create custom or default actions manually)
+        original_auto_create = getattr(settings, "WORKFLOW_AUTO_CREATE_ACTIONS", True)
+        settings.WORKFLOW_AUTO_CREATE_ACTIONS = False
 
-        # Update additional fields if provided
-        if description:
-            workflow.description = description
-        if is_active is not None:
-            workflow.is_active = is_active
-        workflow.save()
+        try:
+            # Use the existing create_workflow service function
+            workflow = create_workflow(
+                company=company,
+                name_en=name_en,
+                name_ar=name_ar,
+                created_by=created_by,
+                pipelines_data=pipelines_data,
+            )
+
+            # Update additional fields if provided
+            if description:
+                workflow.description = description
+            if is_active is not None:
+                workflow.is_active = is_active
+            workflow.save(update_fields=["description", "is_active"])
+
+            # Handle actions
+            if actions_data:
+                # Create custom actions provided by user
+                from .action_management import create_custom_workflow_actions
+
+                create_custom_workflow_actions(actions_data, workflow=workflow)
+                logger.info(
+                    f"Created {len(actions_data)} custom actions for workflow {workflow.id}"
+                )
+            elif original_auto_create:
+                # No custom actions provided, create defaults
+                from .action_management import create_default_workflow_actions
+
+                create_default_workflow_actions(workflow)
+                logger.info(f"Created default actions for workflow {workflow.id}")
+
+        finally:
+            # Restore original setting
+            settings.WORKFLOW_AUTO_CREATE_ACTIONS = original_auto_create
 
         return workflow
 
@@ -1035,13 +1156,23 @@ class WorkFlowSerializer(serializers.ModelSerializer):
 
 
 class StageSerializer(serializers.ModelSerializer):
-    """Serializer for updating Stage configurations including approvals.
+    """Serializer for updating Stage configurations including approvals and custom actions.
 
     Note: Override fields in your implementation as needed.
     is_active is auto-managed based on approval configuration.
+
+    Actions field format: Same as WorkFlowSerializer
     """
 
     stage_info = serializers.JSONField(required=False)
+    actions = serializers.ListField(
+        child=WorkflowActionInputSerializer(),
+        required=False,
+        write_only=True,
+        help_text=_(
+            "Custom actions for this stage. If not provided, pipeline or workflow-level actions will be inherited."
+        ),
+    )
 
     class Meta:
         model = Stage
@@ -1188,8 +1319,45 @@ class StageSerializer(serializers.ModelSerializer):
 
         return value
 
+    def create(self, validated_data):
+        """Create stage with custom actions."""
+        actions_data = validated_data.pop("actions", None)
+
+        # Create the stage
+        stage = super().create(validated_data)
+
+        # Handle actions
+        if actions_data:
+            from .action_management import create_custom_workflow_actions
+
+            create_custom_workflow_actions(actions_data, stage=stage)
+            logger.info(
+                f"Created {len(actions_data)} custom actions for stage {stage.id}"
+            )
+
+        return stage
+
     def update(self, instance, validated_data):
         """Update stage with new configuration and auto-activate/deactivate."""
+        actions_data = validated_data.pop("actions", None)
+        stage_info = validated_data.get("stage_info")
+        old_is_active = instance.is_active
+
+        # Handle actions if provided
+        if actions_data:
+            from .action_management import create_custom_workflow_actions
+
+            # Remove old stage actions before creating new ones
+            from .models import WorkflowAction
+
+            WorkflowAction.objects.filter(stage=instance).delete()
+
+            # Create new actions
+            create_custom_workflow_actions(actions_data, stage=instance)
+            logger.info(
+                f"Updated {len(actions_data)} custom actions for stage {instance.id}"
+            )
+
         stage_info = validated_data.get("stage_info")
         old_is_active = instance.is_active
 

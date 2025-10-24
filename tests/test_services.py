@@ -539,6 +539,14 @@ class WorkflowActionServicesTest(TestCase):
     """Test cases for workflow action services."""
 
     def setUp(self):
+        # Disable auto-creation of default actions for these tests
+        from django.conf import settings
+
+        self._original_auto_create = getattr(
+            settings, "WORKFLOW_AUTO_CREATE_ACTIONS", True
+        )
+        settings.WORKFLOW_AUTO_CREATE_ACTIONS = False
+
         self.user = User.objects.create_user(
             username="testuser", email="test@example.com", password="testpass123"
         )
@@ -594,6 +602,12 @@ class WorkflowActionServicesTest(TestCase):
 
         # Update workflow active status
         self.workflow.update_active_status()
+
+    def tearDown(self):
+        """Restore original settings."""
+        from django.conf import settings
+
+        settings.WORKFLOW_AUTO_CREATE_ACTIONS = self._original_auto_create
 
     def test_get_actions_for_event_stage_level(self):
         """Test getting actions with stage-level priority."""

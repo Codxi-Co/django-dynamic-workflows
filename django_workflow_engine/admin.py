@@ -56,7 +56,7 @@ class PipelineAdmin(admin.ModelAdmin):
         "order",
         "created_at",
     ]
-    list_filter = ["workflow", "department", "company", "created_at"]
+    list_filter = ["department", "company", "created_at"]
     search_fields = ["name_en", "name_ar", "workflow__name_en"]
     readonly_fields = ["created_at", "modified_at"]
 
@@ -96,7 +96,7 @@ class StageAdmin(admin.ModelAdmin):
         "order",
         "created_at",
     ]
-    list_filter = ["is_active", "pipeline__workflow", "pipeline", "created_at"]
+    list_filter = ["is_active", "created_at"]
     search_fields = ["name_en", "name_ar", "pipeline__name_en"]
     readonly_fields = ["created_at", "modified_at"]
 
@@ -141,7 +141,7 @@ class WorkflowAttachmentAdmin(admin.ModelAdmin):
         "progress_percentage",
         "started_at",
     ]
-    list_filter = ["status", "workflow", "content_type", "started_at"]
+    list_filter = ["status", "content_type", "started_at"]
     search_fields = ["object_id", "workflow__name_en"]
     readonly_fields = ["created_at", "modified_at", "progress_percentage"]
 
@@ -236,7 +236,7 @@ class WorkflowActionAdmin(admin.ModelAdmin):
         "order",
         "created_at",
     ]
-    list_filter = ["action_type", "is_active", "workflow", "pipeline", "stage"]
+    list_filter = ["action_type", "is_active"]
     search_fields = [
         "function_path",
         "workflow__name_en",
