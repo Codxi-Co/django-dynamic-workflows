@@ -12,5 +12,5 @@ class WorkflowEngineConfig(AppConfig):
 
     def ready(self):
         """Perform app initialization."""
-        # Import signals or other setup code here if needed
-        pass
+        # Import signals to register them
+        from . import signals  # noqa: F401

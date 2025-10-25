@@ -5,6 +5,67 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.2] - 2025-10-25
+
+### ✨ Added
+
+#### Automatic Workflow Action Cleanup
+- **Automatic Cleanup on Completion**: Cloned WorkflowAction records are now automatically deleted when workflows complete or are rejected
+  - Triggers via Django signal when WorkflowAttachment status changes to COMPLETED or REJECTED
+  - Only deletes cloned WorkflowAction records from completed workflows
+  - **WorkflowAttachment records are ALWAYS preserved** for history and audit purposes
+  - Template workflow actions are never deleted
+  - Error handling with comprehensive logging
+
+#### Updated Cleanup System
+- **Refined Cleanup Behavior**: Cleanup utilities now focus on WorkflowAction records only
+  - `cleanup_completed_workflow_actions()`: Remove cloned actions from completed workflows
+  - `cleanup_orphaned_workflow_actions()`: Clean up orphaned action records
+  - `get_cleanup_statistics()`: Statistics now track cleanable actions
+  - WorkflowAttachment records are kept for audit/history (never deleted automatically)
+
+#### Signal Handler
+- **Post-Save Signal**: Automatic cleanup trigger on WorkflowAttachment status change
+  - `auto_cleanup_completed_workflow_actions()` in `signals.py`
+  - Only processes COMPLETED and REJECTED statuses
+  - Transaction-safe deletion
+  - Comprehensive error logging
+
+#### Testing
+- **5 New Signal Tests**: Comprehensive coverage for automatic cleanup
+  - Auto-cleanup on COMPLETED status
+  - Auto-cleanup on REJECTED status
+  - No cleanup on IN_PROGRESS status
+  - Template actions never deleted
+  - Multiple workflows clean up independently
+- All 318 tests passing (11 cleanup tests total)
+
+### 📚 Features
+
+**Automatic Cleanup**:
+- Zero-delay cleanup - actions deleted immediately on completion
+- Preserves WorkflowAttachment for complete audit trail
+- Independent cleanup per workflow
+- Safe for production with error handling
+
+**Manual Cleanup Still Available**:
+- `python manage.py cleanup_workflows --days=30`
+- Useful for batch cleanup of older workflows
+- Dry-run and statistics modes
+
+### 🔄 Migration Notes
+
+No database migrations required. The automatic cleanup uses Django signals and is backwards compatible.
+
+**What Gets Cleaned Automatically**:
+- Cloned WorkflowAction records from completed/rejected workflows
+
+**What is ALWAYS Preserved**:
+- WorkflowAttachment records (for audit/history)
+- Template WorkflowAction records
+- Main workflow objects (WorkFlow, Pipeline, Stage)
+- Your business objects (Opportunities, Leaves, etc.)
+
 ## [1.4.1] - 2024-10-25
 
 ### 🐛 Fixed

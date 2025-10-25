@@ -14,6 +14,7 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 - **Configurable Triggers**: Actions triggered on workflow events (approve, reject, delegate, etc.)
 - **Default Email Actions**: Smart email notifications to creators and approvers
 - **Dynamic Function Execution**: Execute Python functions by database-stored paths
+- **Workflow Cleanup & Management**: Built-in cleanup utilities to manage completed workflows and reduce database size
 - **Admin Interface**: Rich Django admin for managing workflows, stages, and actions
 
 ## Installation
@@ -1671,6 +1672,151 @@ class WorkflowEmailTest(TestCase):
 4. **Idempotent Handlers**: Ensure action handlers can be safely re-executed
 5. **Error Handling**: Return `False` from handlers on failure for proper logging
 6. **Testing**: Always test with mocked email sending to avoid actual emails during tests
+
+## Workflow Cleanup & Database Management
+
+As workflows complete, `WorkflowAttachment` records accumulate in your database. Use the built-in cleanup utilities to reduce database size while preserving workflow templates for reuse.
+
+### Check What Can Be Cleaned
+
+```bash
+python manage.py cleanup_workflows --stats
+```
+
+Output:
+```
+=== Workflow Cleanup Statistics ===
+
+Workflow Attachments (Instances):
+  Total: 1523
+  Completed: 892 (58.6%)
+  Rejected: 145 (9.5%)
+  In Progress: 486 (31.9%)
+
+Completed/Rejected by Age:
+  Older than 30 days: 645 (62.2%)
+  Older than 90 days: 412 (39.7%)
+  Older than 365 days: 89 (8.6%)
+
+Recommendations:
+  → Consider running: python manage.py cleanup_workflows --days=30
+```
+
+### Cleanup Commands
+
+```bash
+# Preview cleanup (dry run) - 30-day retention
+python manage.py cleanup_workflows --days=30 --dry-run
+
+# Actual cleanup - delete completed workflows older than 30 days
+python manage.py cleanup_workflows --days=30
+
+# Aggressive cleanup - 7-day retention
+python manage.py cleanup_workflows --days=7
+
+# Delete all completed workflows immediately
+python manage.py cleanup_workflows --days=0
+
+# Clean only rejected workflows (keep completed for audit)
+python manage.py cleanup_workflows --days=30 --status rejected
+```
+
+### What Gets Cleaned Up
+
+✅ **Deleted**:
+- WorkflowAttachment records (workflow instances)
+- ApprovalRequest records (approval history)
+- Related workflow data
+
+❌ **NOT Deleted**:
+- Your main objects (Opportunities, Leaves, etc.)
+- Workflow templates (WorkFlow, Pipeline, Stage)
+- WorkflowAction configurations
+
+### Automatic Cleanup (Optional)
+
+**WARNING**: This deletes workflow history immediately when completed. Only enable if you don't need workflow history.
+
+```python
+# settings.py
+
+# Auto-delete workflow attachments when they reach final status
+WORKFLOW_AUTO_CLEANUP_COMPLETED = True  # Default: False
+```
+
+### Scheduled Cleanup (Recommended)
+
+**Option 1: Cron Job**
+
+```bash
+# Edit crontab
+crontab -e
+
+# Add this line (runs daily at 2 AM, keeps 30 days of history)
+0 2 * * * cd /path/to/project && python manage.py cleanup_workflows --days=30
+```
+
+**Option 2: Django Celery Beat**
+
+```python
+# celery.py or tasks.py
+
+from celery import shared_task
+from django.core.management import call_command
+
+@shared_task
+def cleanup_old_workflows():
+    """Clean up workflows older than 30 days."""
+    call_command('cleanup_workflows', days=30)
+
+# In celerybeat schedule:
+from celery.schedules import crontab
+
+app.conf.beat_schedule = {
+    'cleanup-old-workflows': {
+        'task': 'yourapp.tasks.cleanup_old_workflows',
+        'schedule': crontab(hour=2, minute=0),  # Daily at 2 AM
+    },
+}
+```
+
+### Programmatic Usage
+
+```python
+from django_workflow_engine.cleanup import (
+    cleanup_completed_workflow_attachments,
+    get_cleanup_statistics,
+)
+
+# Get statistics
+stats = get_cleanup_statistics()
+print(f"Completed workflows: {stats['completed_attachments']}")
+
+# Cleanup with dry run
+result = cleanup_completed_workflow_attachments(
+    older_than_days=30,
+    dry_run=True
+)
+print(f"Would delete: {result['attachments_deleted']}")
+
+# Actual cleanup
+result = cleanup_completed_workflow_attachments(older_than_days=30)
+print(f"Deleted: {result['attachments_deleted']} attachments")
+```
+
+### Cleanup Best Practices
+
+1. **Choose the Right Retention Period**:
+   - 7 days: Aggressive cleanup, minimal history
+   - 30 days: Recommended for most cases
+   - 90 days: Keep for quarterly reports
+   - 365 days: Keep for annual audits
+
+2. **Always Test First**: Run with `--dry-run` before actual cleanup
+
+3. **Back Up Before Large Cleanups**: Backup database before deleting thousands of records
+
+4. **Monitor Database Size**: Check disk space savings after cleanup
 
 ## Dependencies
 
