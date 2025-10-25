@@ -6,6 +6,8 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 
 - **Generic Workflow Attachment**: Attach workflows to any Django model without hardcoded relationships
 - **Database-Stored Actions**: Configure actions dynamically in the database with inheritance system
+- **3-Tier Action Priority System**: Database → Settings → Default action resolution (no conflicts)
+- **Settings-Based Actions**: Configure project-wide actions via `WORKFLOW_ACTIONS_CONFIG`
 - **Action Inheritance**: Stage → Pipeline → Workflow → Default action hierarchy
 - **Approval Flow Integration**: Built on top of django-approval-workflow package
 - **Approval Type Support**: Control approval behavior with APPROVE, SUBMIT, CHECK_IN_VERIFY, and MOVE types
@@ -1380,7 +1382,62 @@ WORKFLOW_DISABLE_EMAILS = False
 
 # Custom email function path (optional)
 WORKFLOW_SEND_EMAIL_FUNCTION = 'myapp.utils.send_email'
+
+# Settings-based actions configuration (optional)
+WORKFLOW_ACTIONS_CONFIG = [
+    # Notifications (Order 1 - run first)
+    {
+        "action_type": "after_approve",
+        "function_path": "crm.notifications.send_opportunity_approved_notification",
+        "order": 1,
+        "parameters": {"recipients": ["creator", "next_approvers"]},
+    },
+    {
+        "action_type": "on_workflow_start",
+        "function_path": "crm.notifications.opportunity_workflow_started",
+        "order": 1,
+        "parameters": {"recipients": ["current_approvers"]},
+    },
+    # Status Updates (Order 2 - run after notifications)
+    {
+        "action_type": "after_approve",
+        "function_path": "crm.notifications.update_opportunity_status",
+        "order": 2,
+        "parameters": {"status": "IN_PROGRESS"},
+    },
+]
 ```
+
+### Action Priority System
+
+The workflow engine uses a **3-tier priority system** for action execution:
+
+**Priority 1: Database Actions (Highest)**
+- Custom actions stored in the database
+- Inheritance order: Stage → Pipeline → Workflow
+- If found at any level, stops and executes only these actions
+
+**Priority 2: Settings-Based Actions (Middle)**
+- Actions configured in `WORKFLOW_ACTIONS_CONFIG` setting
+- Allows project-wide action definitions
+- Used if no database actions found
+
+**Priority 3: Default Actions (Fallback)**
+- Built-in email notification actions
+- Only used if no database or settings actions found
+
+**Example Flow:**
+1. Check for stage-level database actions → Found? Execute and stop
+2. Check for pipeline-level database actions → Found? Execute and stop
+3. Check for workflow-level database actions → Found? Execute and stop
+4. Check for settings-based actions (`WORKFLOW_ACTIONS_CONFIG`) → Found? Execute and stop
+5. Use default built-in actions as final fallback
+
+**Benefits:**
+- **No Conflicts**: Only one priority level executes per action type
+- **Flexibility**: Override defaults with settings or database actions
+- **Inheritance**: Stage actions override pipeline/workflow actions
+- **Clear Logging**: Logs show action source (DB, settings, or default)
 
 ### Default Actions
 

@@ -338,9 +338,12 @@ def get_effective_actions(
     stage: Optional[Stage] = None,
 ) -> List[WorkflowAction]:
     """
-    Get effective actions for a given event using inheritance.
+    Get effective actions for a given event using priority system.
 
-    Inheritance order: Stage -> Pipeline -> Workflow
+    Priority order:
+    1. Database actions (custom): Stage -> Pipeline -> Workflow
+    2. Settings-based actions: WORKFLOW_ACTIONS_CONFIG
+    3. Default actions: Built-in email notifications
 
     Args:
         action_type: Type of action (from ActionType choices)
@@ -358,6 +361,9 @@ def get_effective_actions(
             stage=current_stage
         )
     """
+    from django.conf import settings
+
+    # Priority 1: Try database actions with inheritance (Stage -> Pipeline -> Workflow)
     # Try stage-level first
     if stage:
         stage_actions = WorkflowAction.objects.filter(
@@ -366,7 +372,7 @@ def get_effective_actions(
 
         if stage_actions.exists():
             logger.debug(
-                f"Found {stage_actions.count()} stage-level actions for {action_type}"
+                f"Found {stage_actions.count()} stage-level DB actions for {action_type}"
             )
             return list(stage_actions)
 
@@ -381,7 +387,7 @@ def get_effective_actions(
 
         if pipeline_actions.exists():
             logger.debug(
-                f"Found {pipeline_actions.count()} pipeline-level actions for {action_type}"
+                f"Found {pipeline_actions.count()} pipeline-level DB actions for {action_type}"
             )
             return list(pipeline_actions)
 
@@ -396,9 +402,102 @@ def get_effective_actions(
 
     if workflow_actions.exists():
         logger.debug(
-            f"Found {workflow_actions.count()} workflow-level actions for {action_type}"
+            f"Found {workflow_actions.count()} workflow-level DB actions for {action_type}"
         )
         return list(workflow_actions)
 
-    logger.debug(f"No actions found for {action_type}")
+    # Priority 2: Check settings for configured actions
+    settings_actions_config = getattr(settings, "WORKFLOW_ACTIONS_CONFIG", None)
+
+    if settings_actions_config:
+        # Filter actions by action_type
+        matching_configs = [
+            config
+            for config in settings_actions_config
+            if config.get("action_type") == action_type
+        ]
+
+        if matching_configs:
+            logger.debug(
+                f"Found {len(matching_configs)} settings-based actions for {action_type}"
+            )
+            # Convert settings config to WorkflowAction-like objects
+            settings_actions = []
+            for config in sorted(matching_configs, key=lambda x: x.get("order", 1)):
+                # Create a mock WorkflowAction object with the config data
+                action = WorkflowAction(
+                    workflow=workflow,
+                    action_type=config.get("action_type"),
+                    function_path=config.get("function_path"),
+                    parameters=config.get("parameters", {}),
+                    order=config.get("order", 1),
+                    is_active=True,
+                )
+                settings_actions.append(action)
+            return settings_actions
+
+    # Priority 3: Use default actions as fallback
+    logger.debug(
+        f"No DB or settings actions found for {action_type}, checking default actions"
+    )
+
+    # Define default actions configuration
+    default_actions_map = {
+        ActionType.AFTER_APPROVE: {
+            "function_path": "django_workflow_engine.action_handlers.send_approval_notification",
+            "parameters": {
+                "template": "workflow_approved",
+                "recipients": ["creator"],
+                "subject": "Workflow Approved",
+            },
+        },
+        ActionType.AFTER_REJECT: {
+            "function_path": "django_workflow_engine.action_handlers.send_rejection_notification",
+            "parameters": {
+                "template": "workflow_rejected",
+                "recipients": ["creator"],
+                "subject": "Workflow Rejected",
+            },
+        },
+        ActionType.AFTER_RESUBMISSION: {
+            "function_path": "django_workflow_engine.action_handlers.send_resubmission_notification",
+            "parameters": {
+                "template": "workflow_resubmission_required",
+                "recipients": ["creator", "current_approver"],
+                "subject": "Resubmission Required",
+            },
+        },
+        ActionType.AFTER_DELEGATE: {
+            "function_path": "django_workflow_engine.action_handlers.send_delegation_notification",
+            "parameters": {
+                "template": "workflow_delegated",
+                "recipients": ["delegated_to", "creator"],
+                "subject": "Workflow Delegated",
+            },
+        },
+        ActionType.AFTER_MOVE_STAGE: {
+            "function_path": "django_workflow_engine.action_handlers.send_stage_move_notification",
+            "parameters": {
+                "template": "workflow_action_required",
+                "recipients": ["creator"],
+                "subject": "Workflow Progressed to Next Stage",
+            },
+        },
+    }
+
+    if action_type in default_actions_map:
+        config = default_actions_map[action_type]
+        logger.debug(f"Using default action for {action_type}")
+        # Create a mock WorkflowAction object for the default action
+        default_action = WorkflowAction(
+            workflow=workflow,
+            action_type=action_type,
+            function_path=config["function_path"],
+            parameters=config["parameters"],
+            order=1,
+            is_active=True,
+        )
+        return [default_action]
+
+    logger.debug(f"No actions found at any priority level for {action_type}")
     return []

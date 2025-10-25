@@ -5,6 +5,96 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.3] - 2025-10-25
+
+### ✨ Added
+
+#### 3-Tier Action Priority System
+- **Priority-Based Action Resolution**: Implemented a 3-tier priority system for action execution
+  - Priority 1: Database actions (Stage → Pipeline → Workflow inheritance)
+  - Priority 2: Settings-based actions via `WORKFLOW_ACTIONS_CONFIG`
+  - Priority 3: Default built-in actions as fallback
+  - **No Conflicts**: Only one priority level executes per action type
+
+#### Settings-Based Actions Configuration
+- **New Setting**: `WORKFLOW_ACTIONS_CONFIG` for project-wide action definitions
+  - Configure actions in Django settings without database changes
+  - Supports all action types with custom function paths and parameters
+  - Allows ordered execution with `order` parameter
+  - Perfect for application-level defaults that override package defaults
+
+#### Improved Action Timing
+- **ON_WORKFLOW_START Timing Fix**: Now triggers AFTER approval cycle setup
+  - `ON_WORKFLOW_START` executes after `start_flow()` completes
+  - Ensures `current_approver` context is available in action handlers
+  - Prevents double-trigger issues with template and cloned workflows
+
+#### Enhanced Logging
+- **Better Action Source Identification**: Logs clearly show action source
+  - Database actions: `"Executing DB action 123"`
+  - Settings/default actions: `"Executing settings/default action"`
+  - Helps debugging by showing where each action comes from
+
+### 🔧 Changed
+
+- Refactored `get_effective_actions()` to implement priority system
+- Updated action executor logging for better clarity
+- Improved documentation in README with priority system examples
+
+### 🐛 Fixed
+
+- Fixed ON_WORKFLOW_START double-trigger issue
+- Fixed ON_WORKFLOW_START timing to run after approval setup
+- Fixed logging for actions without database IDs (settings/default actions)
+
+### 📚 Documentation
+
+- Added "Action Priority System" section to README
+- Added `WORKFLOW_ACTIONS_CONFIG` examples
+- Updated features list with new capabilities
+- Clear examples of priority system flow
+
+### 💡 Example Configuration
+
+```python
+# settings.py
+WORKFLOW_ACTIONS_CONFIG = [
+    # Notifications (Order 1)
+    {
+        "action_type": "after_approve",
+        "function_path": "crm.notifications.send_opportunity_approved",
+        "order": 1,
+        "parameters": {"recipients": ["creator", "next_approvers"]},
+    },
+    {
+        "action_type": "on_workflow_start",
+        "function_path": "crm.notifications.workflow_started",
+        "order": 1,
+        "parameters": {"recipients": ["current_approvers"]},
+    },
+    # Status Updates (Order 2)
+    {
+        "action_type": "after_approve",
+        "function_path": "crm.actions.update_status",
+        "order": 2,
+        "parameters": {"status": "IN_PROGRESS"},
+    },
+]
+```
+
+### 🔄 Migration Notes
+
+No database migrations required. All changes are backwards compatible.
+
+**Action Resolution Changes**:
+- If you have database actions, they take priority (same as before)
+- New: Add `WORKFLOW_ACTIONS_CONFIG` setting to override defaults
+- Default actions still work if nothing else is configured
+
+**Timing Change**:
+- `ON_WORKFLOW_START` now has access to `current_approver` context
+- This may affect custom handlers that relied on the old timing
+
 ## [1.4.2] - 2025-10-25
 
 ### ✨ Added

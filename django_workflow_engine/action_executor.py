@@ -92,11 +92,18 @@ def execute_workflow_actions(
     for action in actions:
         # Skip inactive actions
         if not action.is_active:
-            logger.debug(f"Skipping inactive action {action.id}")
+            action_label = f"DB:{action.id}" if action.id else "settings/default"
+            logger.debug(f"Skipping inactive action {action_label}")
             skipped += 1
             continue
 
         try:
+            # Determine action source for logging
+            if action.id:
+                action_source = f"DB action {action.id}"
+            else:
+                action_source = "settings/default action"
+
             # Import the handler function
             handler_function = import_string(action.function_path)
 
@@ -105,7 +112,7 @@ def execute_workflow_actions(
 
             # Execute the handler
             logger.info(
-                f"Executing action {action.id} - {action.function_path} for {action_type}"
+                f"Executing {action_source} - {action.function_path} for {action_type}"
             )
 
             result = handler_function(
@@ -118,22 +125,28 @@ def execute_workflow_actions(
 
             if result:
                 succeeded += 1
-                logger.info(f"Action {action.id} executed successfully")
+                logger.info(f"{action_source} executed successfully")
             else:
                 failed += 1
-                logger.warning(f"Action {action.id} execution returned False")
+                logger.warning(f"{action_source} execution returned False")
 
         except ImportError as e:
+            action_label = (
+                f"action {action.id}" if action.id else "settings/default action"
+            )
             logger.error(
                 f"Failed to import handler function '{action.function_path}' "
-                f"for action {action.id}: {e}"
+                f"for {action_label}: {e}"
             )
             failed += 1
             executed += 1
 
         except Exception as e:
+            action_label = (
+                f"action {action.id}" if action.id else "settings/default action"
+            )
             logger.error(
-                f"Failed to execute action {action.id} ({action.function_path}): {e}",
+                f"Failed to execute {action_label} ({action.function_path}): {e}",
                 exc_info=True,
             )
             failed += 1

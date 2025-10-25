@@ -396,11 +396,6 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
     attachment.started_by = user
     attachment.save()
 
-    # Trigger workflow start actions
-    trigger_workflow_event(
-        attachment, ActionType.ON_WORKFLOW_START, initial_stage=first_stage, user=user
-    )
-
     # Start approval flow for first stage
     from approval_workflow.services import start_flow
 
@@ -422,6 +417,12 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
         logger.warning(
             LOG_MESSAGES["no_approval_steps"].format(stage_name=first_stage.name_en)
         )
+
+    # Trigger workflow start actions AFTER approval setup
+    # This ensures current_approver context is available
+    trigger_workflow_event(
+        attachment, ActionType.ON_WORKFLOW_START, initial_stage=first_stage, user=user
+    )
 
     logger.info(
         f"Workflow started for {obj._meta.label}({obj.pk}) at stage '{first_stage.name_en}'"
