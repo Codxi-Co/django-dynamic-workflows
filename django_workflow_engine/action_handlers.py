@@ -46,13 +46,22 @@ def send_approval_notification(
         return False
 
     # Build email context
+    # Extract stage and user to avoid duplication when unpacking **context
+    stage = context.get("stage")
+    user = context.get("user")
+
+    # Create context copy without stage and user to avoid duplicate kwargs
+    context_without_duplicates = {
+        k: v for k, v in context.items() if k not in ["stage", "user"]
+    }
+
     email_context = get_workflow_email_context(
         workflow_attachment=workflow_attachment,
-        stage=context.get("stage"),
-        user=context.get("user"),
+        stage=stage,
+        user=user,
         subject=subject,
         action_type="approval",
-        **context,
+        **context_without_duplicates,
     )
 
     # Send emails
@@ -107,14 +116,23 @@ def send_rejection_notification(
         return False
 
     # Build email context
+    # Extract stage and user to avoid duplication when unpacking **context
+    stage = context.get("stage")
+    user = context.get("user")
+
+    # Create context copy without stage and user to avoid duplicate kwargs
+    context_without_duplicates = {
+        k: v for k, v in context.items() if k not in ["stage", "user"]
+    }
+
     email_context = get_workflow_email_context(
         workflow_attachment=workflow_attachment,
-        stage=context.get("stage"),
-        user=context.get("user"),
+        stage=stage,
+        user=user,
         subject=subject,
         action_type="rejection",
         rejection_reason=context.get("reason", "No reason provided"),
-        **context,
+        **context_without_duplicates,
     )
 
     # Send emails
@@ -169,16 +187,25 @@ def send_resubmission_notification(
         return False
 
     # Build email context
+    # Extract stage and user to avoid duplication when unpacking **context
+    stage = context.get("stage")
+    user = context.get("user")
     resubmission_stage = context.get("resubmission_stage")
+
+    # Create context copy without stage and user to avoid duplicate kwargs
+    context_without_duplicates = {
+        k: v for k, v in context.items() if k not in ["stage", "user"]
+    }
+
     email_context = get_workflow_email_context(
         workflow_attachment=workflow_attachment,
-        stage=context.get("stage"),
-        user=context.get("user"),
+        stage=stage,
+        user=user,
         subject=subject,
         action_type="resubmission",
         resubmission_stage=resubmission_stage.name_en if resubmission_stage else "N/A",
         resubmission_comments=context.get("comments", ""),
-        **context,
+        **context_without_duplicates,
     )
 
     # Send emails
@@ -233,13 +260,21 @@ def send_delegation_notification(
         return False
 
     # Build email context
+    # Extract stage and user to avoid duplication when unpacking **context
+    stage = context.get("stage")
+    user = context.get("user")
     delegated_to = context.get("delegated_to")
-    delegated_by = context.get("user")
+    delegated_by = user
+
+    # Create context copy without stage and user to avoid duplicate kwargs
+    context_without_duplicates = {
+        k: v for k, v in context.items() if k not in ["stage", "user"]
+    }
 
     email_context = get_workflow_email_context(
         workflow_attachment=workflow_attachment,
-        stage=context.get("stage"),
-        user=context.get("user"),
+        stage=stage,
+        user=user,
         subject=subject,
         action_type="delegation",
         delegated_by=(
@@ -248,7 +283,7 @@ def send_delegation_notification(
             else "Unknown"
         ),
         delegation_reason=context.get("delegation_reason", ""),
-        **context,
+        **context_without_duplicates,
     )
 
     # Send emails
@@ -303,18 +338,25 @@ def send_stage_move_notification(
         return False
 
     # Build email context
+    # Extract stage and user to avoid duplication when unpacking **context
     current_stage = context.get("stage") or workflow_attachment.current_stage
+    user = context.get("user")
     previous_stage = context.get("previous_stage")
+
+    # Create context copy without stage and user to avoid duplicate kwargs
+    context_without_duplicates = {
+        k: v for k, v in context.items() if k not in ["stage", "user"]
+    }
 
     email_context = get_workflow_email_context(
         workflow_attachment=workflow_attachment,
         stage=current_stage,
-        user=context.get("user"),
+        user=user,
         subject=subject,
         action_type="stage_move",
         previous_stage_name=previous_stage.name_en if previous_stage else "N/A",
         action_description=f"Workflow moved to stage: {current_stage.name_en if current_stage else 'N/A'}",
-        **context,
+        **context_without_duplicates,
     )
 
     # Send emails

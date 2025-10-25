@@ -5,6 +5,14 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2024-10-25
+
+### 🐛 Fixed
+- **Action Handlers**: Fixed duplicate keyword argument error in action handlers
+  - Resolved `TypeError: get_workflow_email_context() got multiple values for keyword argument 'user'`
+  - All 5 action handlers (`send_approval_notification`, `send_rejection_notification`, `send_resubmission_notification`, `send_delegation_notification`, `send_stage_move_notification`) now properly extract `stage` and `user` from context before unpacking remaining kwargs
+  - Prevents duplicate parameters when calling `get_workflow_email_context()`
+
 ## [1.4.0] - 2024-10-24
 
 ### ✨ Added
