@@ -21,6 +21,25 @@ class WorkflowStatus(models.TextChoices):
     DRAFT = "draft", "Draft"
 
 
+class WorkflowStrategy(models.IntegerChoices):
+    """Workflow hierarchy strategies for approval management.
+
+    Strategy 1: Full hierarchy (workflow → pipeline → stage) with approvals at stage level
+    Strategy 2: Two-level (workflow → pipeline) with approvals at pipeline level, NO stages allowed
+    Strategy 3: Single-level (workflow only) with approvals at workflow level, NO pipelines or stages allowed
+    """
+
+    WORKFLOW_PIPELINE_STAGE = 1, _(
+        "Workflow → Pipeline → Stage - Approvals at stage level"
+    )
+    WORKFLOW_PIPELINE = 2, _(
+        "Workflow → Pipeline - Approvals at pipeline level (no stages)"
+    )
+    WORKFLOW_ONLY = 3, _(
+        "Workflow Only - Approvals at workflow level (no pipelines/stages)"
+    )
+
+
 class ApprovalTypes(models.TextChoices):
     """Types of approval configurations."""
 

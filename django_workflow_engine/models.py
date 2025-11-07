@@ -22,6 +22,7 @@ from .choices import (
     ApprovalTypes,
     WorkflowAttachmentStatus,
     WorkflowStatus,
+    WorkflowStrategy,
 )
 from .constants import ERROR_MESSAGES
 
@@ -151,6 +152,22 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
         help_text=_("Whether this workflow is hidden (true for cloned workflows)"),
         verbose_name=_("Is Hidden"),
     )
+    strategy = models.IntegerField(
+        choices=WorkflowStrategy.choices,
+        default=WorkflowStrategy.WORKFLOW_PIPELINE_STAGE,
+        help_text=_(
+            "Workflow approval strategy: 1=Workflow only, 2=Workflow→Pipeline, 3=Workflow→Pipeline→Stage"
+        ),
+        verbose_name=_("Workflow Strategy"),
+    )
+    workflow_info = models.JSONField(
+        default=dict,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Workflow configuration including approvals (for strategy 1 workflows)"
+        ),
+    )
 
     class Meta:
         # Remove company-based unique constraints since company is now optional
@@ -159,32 +176,85 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
         verbose_name_plural = _("Workflows")
 
     def validate_completeness(self):
-        """Validate if workflow is complete and can be activated.
+        """Validate if workflow is complete and can be activated (strategy-aware).
 
         Uses select_related/prefetch_related for optimal performance.
+
+        Strategy 1: Full hierarchy required (workflow → pipeline → stage) with stage-level approvals
+        Strategy 2: Two-level only (workflow → pipeline) with pipeline-level approvals, NO stages allowed
+        Strategy 3: Single-level only (workflow) with workflow-level approvals, NO pipelines/stages allowed
         """
-        # Use prefetch_related to fetch all pipelines and stages in 2 queries
-        pipelines = self.pipelines.prefetch_related("stages").all()
+        # Strategy 1 (Workflow→Pipeline→Stage): Check stage_info for approvals (default/full hierarchy)
+        if self.strategy == WorkflowStrategy.WORKFLOW_PIPELINE_STAGE:
+            pipelines = self.pipelines.prefetch_related("stages").all()
 
-        if not pipelines:
-            return False, "Workflow must have at least one pipeline"
+            if not pipelines:
+                return False, "Strategy 1 workflow must have at least one pipeline"
 
-        for pipeline in pipelines:
-            stages = list(pipeline.stages.all())  # Already prefetched
-            if not stages:
-                return (
-                    False,
-                    f"Pipeline '{pipeline.name_en}' must have at least one stage",
-                )
-
-            for stage in stages:
-                if not stage.is_complete():
+            for pipeline in pipelines:
+                stages = list(pipeline.stages.all())  # Already prefetched
+                if not stages:
                     return (
                         False,
-                        f"Stage '{stage.name_en}' in pipeline '{pipeline.name_en}' is not properly configured",
+                        f"Strategy 1 pipeline '{pipeline.name_en}' must have at least one stage",
                     )
 
-        return True, "Workflow is complete and valid"
+                for stage in stages:
+                    if not stage.is_complete():
+                        return (
+                            False,
+                            f"Stage '{stage.name_en}' in pipeline '{pipeline.name_en}' is not properly configured",
+                        )
+
+            return True, "Strategy 1 workflow is complete and valid"
+
+        # Strategy 2 (Workflow→Pipeline): Check pipeline_info for approvals, NO stages allowed
+        if self.strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+            pipelines = self.pipelines.prefetch_related("stages").all()
+
+            if not pipelines:
+                return False, "Strategy 2 workflow must have at least one pipeline"
+
+            for pipeline in pipelines:
+                # Check pipeline has approvals in pipeline_info
+                pipeline_info = pipeline.pipeline_info or {}
+                approvals = pipeline_info.get("approvals", [])
+
+                if not approvals:
+                    return (
+                        False,
+                        f"Strategy 2 pipeline '{pipeline.name_en}' must have approvals in pipeline_info",
+                    )
+
+                # IMPORTANT: Strategy 2 should NOT have any stages
+                stages = list(pipeline.stages.all())
+                if stages:
+                    return (
+                        False,
+                        f"Strategy 2 pipeline '{pipeline.name_en}' cannot have stages (approvals are at pipeline level)",
+                    )
+
+            return True, "Strategy 2 workflow is complete and valid"
+
+        # Strategy 3 (Workflow Only): Check workflow_info for approvals, NO pipelines or stages allowed
+        if self.strategy == WorkflowStrategy.WORKFLOW_ONLY:
+            workflow_info = self.workflow_info or {}
+            approvals = workflow_info.get("approvals", [])
+
+            if not approvals:
+                return False, "Strategy 3 workflow must have approvals in workflow_info"
+
+            # IMPORTANT: Strategy 3 should NOT have any pipelines or stages
+            pipelines = self.pipelines.all()
+            if pipelines.exists():
+                return (
+                    False,
+                    "Strategy 3 workflow cannot have pipelines (approvals are at workflow level only)",
+                )
+
+            return True, "Strategy 3 workflow is complete and valid"
+
+        return False, f"Unknown strategy: {self.strategy}"
 
     def update_active_status(self):
         """Update is_active based on workflow completeness."""
@@ -265,6 +335,9 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
                     department_id=pipeline.department_id,
                     order=pipeline.order,
                     is_hidden=True,
+                    pipeline_info=(
+                        pipeline.pipeline_info.copy() if pipeline.pipeline_info else {}
+                    ),
                     created_by=pipeline.created_by,
                     modified_by=pipeline.modified_by,
                     cloned_from=pipeline,
@@ -368,6 +441,14 @@ class Pipeline(CompanyBaseWithNamedModelWithClone):
         default=False,
         help_text=_("Whether this pipeline is hidden (true for cloned pipelines)"),
         verbose_name=_("Is Hidden"),
+    )
+    pipeline_info = models.JSONField(
+        default=dict,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Pipeline configuration including approvals (for strategy 2 workflows)"
+        ),
     )
 
     @property
@@ -635,12 +716,65 @@ class WorkflowAttachment(models.Model):
 
     @property
     def next_stage(self):
-        """Get the next stage in workflow progression."""
+        """Get the next stage in workflow progression (strategy-aware).
+
+        Behavior depends on workflow strategy:
+        - Strategy 1 (Workflow→Pipeline→Stage): Move stage to stage, then pipeline to pipeline (full hierarchy)
+        - Strategy 2 (Workflow→Pipeline): Move to next pipeline (no stages exist)
+        - Strategy 3 (Workflow Only): No movement, returns None (workflow completes after approvals)
+        """
+        # Get workflow strategy
+        strategy = self.workflow.strategy
+
+        # Strategy 3 (Workflow Only): No movement between stages/pipelines
+        # All approvals are at workflow level, so once complete, workflow is done
+        if strategy == WorkflowStrategy.WORKFLOW_ONLY:
+            logger.debug(
+                f"Strategy 3 (Workflow Only) - No next stage, workflow will complete after approvals"
+            )
+            return None
+
+        # Strategy 2 (Workflow→Pipeline): Move to next pipeline (no stages exist)
+        if strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+            current_pipeline = self.current_pipeline
+
+            if not current_pipeline:
+                # Return first pipeline if no current pipeline set
+                first_pipeline = self.workflow.pipelines.order_by("order").first()
+                logger.debug(
+                    f"Strategy 2 (Workflow→Pipeline) - No current pipeline, returning first pipeline"
+                )
+                return first_pipeline  # Note: This returns a Pipeline, not a Stage
+
+            # Move to next pipeline
+            next_pipeline = (
+                self.workflow.pipelines.filter(order__gt=current_pipeline.order)
+                .order_by("order")
+                .first()
+            )
+
+            if next_pipeline:
+                logger.debug(
+                    f"Strategy 2 (Workflow→Pipeline) - Moving to next pipeline '{next_pipeline.name_en}'"
+                )
+                return next_pipeline  # Note: This returns a Pipeline, not a Stage
+            else:
+                logger.debug(
+                    f"Strategy 2 (Workflow→Pipeline) - No next pipeline, workflow will complete"
+                )
+                return None
+
+        # Strategy 1 (Workflow→Pipeline→Stage): Default behavior - move stage to stage (full hierarchy)
         if not self.current_stage:
             # Return first stage of first pipeline
             first_pipeline = self.workflow.pipelines.order_by("order").first()
             if first_pipeline:
-                return first_pipeline.stages.order_by("order").first()
+                first_stage = first_pipeline.stages.order_by("order").first()
+                if first_stage:
+                    logger.debug(
+                        f"Strategy 1 (Workflow→Pipeline→Stage) - Returning first stage '{first_stage.name_en}'"
+                    )
+                    return first_stage
             return None
 
         # Use current_pipeline field for consistency, fallback to current_stage.pipeline
@@ -660,6 +794,9 @@ class WorkflowAttachment(models.Model):
         )
 
         if next_stage:
+            logger.debug(
+                f"Strategy 1 (Workflow→Pipeline→Stage) - Moving to next stage '{next_stage.name_en}' in same pipeline"
+            )
             return next_stage
 
         # Move to next pipeline
@@ -670,8 +807,15 @@ class WorkflowAttachment(models.Model):
         )
 
         if next_pipeline:
-            return next_pipeline.stages.order_by("order").first()
+            next_stage = next_pipeline.stages.order_by("order").first()
+            logger.debug(
+                f"Strategy 1 (Workflow→Pipeline→Stage) - Moving to first stage of next pipeline '{next_pipeline.name_en}'"
+            )
+            return next_stage
 
+        logger.debug(
+            f"Strategy 1 (Workflow→Pipeline→Stage) - No next stage or pipeline, workflow will complete"
+        )
         return None  # Workflow complete
 
     def get_progress_info(self):

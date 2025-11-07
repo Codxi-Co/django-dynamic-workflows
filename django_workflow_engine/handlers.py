@@ -222,6 +222,10 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
         except Exception as e:
             logger.error(f"Error progressing workflow after final approval: {str(e)}")
 
+    def on_approve(self, approval_instance):
+        """Called when an approval occurs (newer approval_workflow API)."""
+        self.after_approve(approval_instance)
+
     def after_approve(self, approval_instance):
         """Called after each individual approval (not necessarily final)."""
         logger.debug(f"Approval step completed for {self.instance}")

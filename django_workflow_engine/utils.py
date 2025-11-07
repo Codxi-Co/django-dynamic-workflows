@@ -15,7 +15,7 @@ from django.db.models import Model
 
 from approval_workflow.choices import ApprovalType, RoleSelectionStrategy
 
-from .choices import ApprovalTypes
+from .choices import ApprovalTypes, WorkflowStrategy
 from .constants import ERROR_MESSAGES
 
 logger = logging.getLogger(__name__)
@@ -102,10 +102,15 @@ def get_workflow_stage_approvers(stage, created_by_user: User) -> List[Dict[str,
 def build_approval_steps(
     stage, created_by_user: Optional[User], start_step: int = 1
 ) -> List[Dict[str, Any]]:
-    """Build approval steps for a workflow stage with optimized batch queries.
+    """Build approval steps for a workflow with strategy-aware approval extraction.
+
+    This function handles all 3 workflow strategies:
+    - Strategy 1 (Workflow Only): Approvals from workflow.workflow_info
+    - Strategy 2 (Workflow→Pipeline): Approvals from pipeline.pipeline_info
+    - Strategy 3 (Workflow→Pipeline→Stage): Approvals from stage.stage_info (default)
 
     Args:
-        stage: The Stage instance
+        stage: The Stage instance (used for strategy 3 and to access workflow/pipeline)
         created_by_user: The user who created the workflow item (can be None)
         start_step: The starting step number (default: 1). Use this to continue
                    numbering from a specific point, e.g., after resubmission or
@@ -133,7 +138,52 @@ def build_approval_steps(
         # This prevents cascading errors in approval flow creation
         return []
 
-    approvals = get_workflow_stage_approvers(stage, created_by_user)
+    # Get workflow to determine strategy
+    workflow = stage.pipeline.workflow if stage and stage.pipeline else None
+    if not workflow:
+        logger.error(f"No workflow found for stage {stage.id} ({stage.name_en})")
+        return []
+
+    strategy = workflow.strategy
+
+    # Extract approvals based on strategy
+    if strategy == WorkflowStrategy.WORKFLOW_PIPELINE_STAGE:
+        # Strategy 1: Get approvals from stage.stage_info (full hierarchy - default behavior)
+        approvals = get_workflow_stage_approvers(stage, created_by_user)
+        logger.debug(
+            f"Using Strategy 1 (Workflow→Pipeline→Stage) - Found {len(approvals)} approvals in stage.stage_info"
+        )
+    elif strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+        # Strategy 2: Get approvals from pipeline.pipeline_info (no stages)
+        pipeline = stage.pipeline
+        pipeline_info = pipeline.pipeline_info or {}
+        approvals = pipeline_info.get("approvals", [])
+        logger.debug(
+            f"Using Strategy 2 (Workflow→Pipeline) - Found {len(approvals)} approvals in pipeline.pipeline_info"
+        )
+    elif strategy == WorkflowStrategy.WORKFLOW_ONLY:
+        # Strategy 3: Get approvals from workflow.workflow_info (no pipelines/stages)
+        workflow_info = workflow.workflow_info or {}
+        approvals = workflow_info.get("approvals", [])
+        logger.debug(
+            f"Using Strategy 3 (Workflow Only) - Found {len(approvals)} approvals in workflow.workflow_info"
+        )
+    else:
+        logger.error(f"Unknown workflow strategy: {strategy}")
+        approvals = []
+
+    # If no approvals found, default to self-approval
+    if not approvals:
+        logger.warning(
+            f"No approvals found for stage {stage.id} using strategy {strategy}, "
+            f"defaulting to self-approval"
+        )
+        approvals = [
+            {
+                "approval_user": created_by_user,
+                "approval_type": ApprovalTypes.SELF,
+            }
+        ]
     steps = []
 
     # Batch fetch all users, roles, and forms to avoid N+1 queries
@@ -315,6 +365,122 @@ def get_next_workflow_stage(current_stage) -> Optional:
         return next_pipeline.stages.order_by("order").first()
 
     return None
+
+
+def build_approval_steps_from_config(
+    approvals: List[Dict[str, Any]],
+    approval_user: Optional[User],
+    extra_fields: Dict[str, Any] = None,
+    start_step: int = 1,
+) -> List[Dict[str, Any]]:
+    """Build approval steps from approval configuration (for strategies 2 and 3).
+
+    This helper function extracts the common logic for building approval steps
+    from pipeline_info or workflow_info configurations.
+
+    Args:
+        approvals: List of approval configurations
+        approval_user: Default user to use if none specified
+        extra_fields: Extra fields to add to each step
+        start_step: Starting step number (default: 1)
+
+    Returns:
+        List of approval step configurations
+    """
+    from django.apps import apps
+    from django.conf import settings
+    from django.contrib.auth import get_user_model
+
+    from approval_workflow.choices import ApprovalType as ApprovalFlowType
+    from approval_workflow.choices import RoleSelectionStrategy
+
+    if not approvals:
+        return []
+
+    steps = []
+    UserModel = get_user_model()
+
+    for i, approval_data in enumerate(approvals, start=start_step):
+        step = {
+            "step": i,
+            "extra_fields": extra_fields.copy() if extra_fields else {},
+        }
+
+        approval_type = approval_data.get("approval_type", "self-approved")
+
+        # Handle user-based approvals
+        if approval_type in ("self-approved", "user") or approval_data.get(
+            "approval_user"
+        ):
+            approval_user_data = approval_data.get("approval_user", approval_user)
+            if isinstance(approval_user_data, int):
+                try:
+                    step["assigned_to"] = UserModel.objects.get(id=approval_user_data)
+                except UserModel.DoesNotExist:
+                    step["assigned_to"] = approval_user
+            else:
+                step["assigned_to"] = approval_user
+
+        # Handle role-based approvals
+        elif approval_type == "role" and approval_data.get("user_role"):
+            try:
+                role_model_path = getattr(
+                    settings, "APPROVAL_ROLE_MODEL", "common.Role"
+                )
+                app_label, model_name = role_model_path.split(".")
+                RoleModel = apps.get_model(app_label, model_name)
+                role = RoleModel.objects.get(id=approval_data["user_role"])
+                step["assigned_role"] = role
+                step["role_selection_strategy"] = approval_data.get(
+                    "role_selection_strategy", RoleSelectionStrategy.ANYONE
+                )
+            except Exception as e:
+                logger.error(f"Error fetching role: {e}")
+                step["assigned_to"] = approval_user
+
+        # Handle step approval type (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE)
+        step_approval_type = approval_data.get("step_approval_type")
+        if step_approval_type:
+            valid_types = [choice[0] for choice in ApprovalFlowType.choices]
+            if step_approval_type in valid_types:
+                step["approval_type"] = step_approval_type
+            else:
+                step["approval_type"] = ApprovalFlowType.APPROVE
+        else:
+            step["approval_type"] = ApprovalFlowType.APPROVE
+
+        steps.append(step)
+
+    return steps
+
+
+def get_workflow_location_string(attachment) -> str:
+    """Get human-readable location string based on workflow strategy.
+
+    Returns a location string like:
+    - Strategy 1: "stage: Stage Name"
+    - Strategy 2: "pipeline: Pipeline Name"
+    - Strategy 3: "workflow: Workflow Name"
+
+    Args:
+        attachment: WorkflowAttachment instance
+
+    Returns:
+        Location string describing current position in workflow
+    """
+    from .choices import WorkflowStrategy
+
+    if not attachment:
+        return "unknown"
+
+    strategy = attachment.workflow.strategy
+
+    if strategy == WorkflowStrategy.WORKFLOW_PIPELINE_STAGE:
+        return f"stage: {attachment.current_stage.name_en if attachment.current_stage else 'None'}"
+    elif strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+        return f"pipeline: {attachment.current_pipeline.name_en if attachment.current_pipeline else 'None'}"
+    else:  # WorkflowStrategy.WORKFLOW_ONLY
+        return f"workflow: {attachment.workflow.name_en}"
 
 
 def get_workflow_first_stage(workflow) -> Optional:

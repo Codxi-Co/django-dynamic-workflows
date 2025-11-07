@@ -339,13 +339,17 @@ def attach_workflow_to_object(
 
     # Auto-start if requested
     if auto_start and attachment.status == WorkflowAttachmentStatus.NOT_STARTED:
-        start_workflow_for_object(obj, user)
+        attachment = start_workflow_for_object(obj, user)
 
     return attachment
 
 
 def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachment:
-    """Start workflow execution for an object.
+    """Start workflow execution for an object (strategy-aware).
+
+    Strategy 1: Full hierarchy - starts at first stage of first pipeline
+    Strategy 2: Pipeline only - starts at first pipeline (no stages)
+    Strategy 3: Workflow only - starts immediately (no pipelines/stages)
 
     Args:
         obj: The model instance to start workflow for
@@ -356,6 +360,8 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
     """
     from django.contrib.contenttypes.models import ContentType
     from django.utils import timezone
+
+    from .choices import WorkflowStrategy
 
     content_type = ContentType.objects.get_for_model(obj)
 
@@ -373,30 +379,52 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
             ERROR_MESSAGES["workflow_already_started"].format(status=attachment.status)
         )
 
-    # Get first stage (data already prefetched)
-    first_pipeline = attachment.workflow.pipelines.order_by("order").first()
-    if not first_pipeline:
-        raise ValueError(
-            ERROR_MESSAGES["no_pipelines"].format(
-                workflow_name=attachment.workflow.name_en
-            )
-        )
+    strategy = attachment.workflow.strategy
+    first_pipeline = None
+    first_stage = None
 
-    first_stage = first_pipeline.stages.order_by("order").first()
-    if not first_stage:
-        raise ValueError(
-            ERROR_MESSAGES["no_stages"].format(pipeline_name=first_pipeline.name_en)
-        )
+    # Handle each strategy differently
+    if strategy == WorkflowStrategy.WORKFLOW_PIPELINE_STAGE:
+        # Strategy 1: Full hierarchy - need pipeline and stage
+        first_pipeline = attachment.workflow.pipelines.order_by("order").first()
+        if not first_pipeline:
+            raise ValueError(
+                ERROR_MESSAGES["no_pipelines"].format(
+                    workflow_name=attachment.workflow.name_en
+                )
+            )
+
+        first_stage = first_pipeline.stages.order_by("order").first()
+        if not first_stage:
+            raise ValueError(
+                ERROR_MESSAGES["no_stages"].format(pipeline_name=first_pipeline.name_en)
+            )
+
+    elif strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+        # Strategy 2: Pipeline only - need pipeline but NO stage
+        first_pipeline = attachment.workflow.pipelines.order_by("order").first()
+        if not first_pipeline:
+            raise ValueError(
+                ERROR_MESSAGES["no_pipelines"].format(
+                    workflow_name=attachment.workflow.name_en
+                )
+            )
+        # first_stage remains None - this is expected for Strategy 2
+
+    elif strategy == WorkflowStrategy.WORKFLOW_ONLY:
+        # Strategy 3: Workflow only - NO pipeline or stage needed
+        # first_pipeline and first_stage remain None - this is expected for Strategy 3
+        pass
 
     # Update attachment
     attachment.status = WorkflowAttachmentStatus.IN_PROGRESS
-    attachment.current_stage = first_stage
-    attachment.current_pipeline = first_pipeline
+    attachment.current_stage = first_stage  # Will be None for strategies 2 and 3
+    attachment.current_pipeline = first_pipeline  # Will be None for strategy 3
     attachment.started_at = timezone.now()
     attachment.started_by = user
     attachment.save()
 
-    # Start approval flow for first stage
+    # Start approval flow based on strategy
     from approval_workflow.services import start_flow
 
     from .constants import LOG_MESSAGES
@@ -405,37 +433,77 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
     # Get user for approval steps using centralized utility
     approval_user = get_user_for_approval(obj, user, attachment)
 
-    steps = build_approval_steps(first_stage, approval_user)
+    # Build approval steps based on strategy
+    steps = []
+    if strategy == WorkflowStrategy.WORKFLOW_PIPELINE_STAGE:
+        # Strategy 1: Build steps from stage
+        steps = build_approval_steps(first_stage, approval_user)
+        location = f"stage '{first_stage.name_en}'"
+    elif strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+        # Strategy 2: Build steps from pipeline (extract directly from pipeline_info)
+        from .utils import build_approval_steps_from_config
+
+        pipeline_info = first_pipeline.pipeline_info or {}
+        approvals = pipeline_info.get("approvals", [])
+
+        steps = build_approval_steps_from_config(
+            approvals=approvals,
+            approval_user=approval_user,
+            extra_fields={"pipeline_id": first_pipeline.id},
+            start_step=1,
+        )
+
+        location = f"pipeline '{first_pipeline.name_en}'"
+    elif strategy == WorkflowStrategy.WORKFLOW_ONLY:
+        # Strategy 3: Build steps from workflow (extract from workflow_info)
+        from .utils import build_approval_steps_from_config
+
+        workflow_info = attachment.workflow.workflow_info or {}
+        approvals = workflow_info.get("approvals", [])
+
+        steps = build_approval_steps_from_config(
+            approvals=approvals,
+            approval_user=approval_user,
+            extra_fields={"workflow_id": attachment.workflow.id},
+            start_step=1,
+        )
+
+        location = f"workflow '{attachment.workflow.name_en}'"
+
     if steps:
         logger.info(
             LOG_MESSAGES["approval_flow_started"].format(
-                stage_name=first_stage.name_en, step_count=len(steps)
+                stage_name=location, step_count=len(steps)
             )
         )
         start_flow(obj, steps)
     else:
-        logger.warning(
-            LOG_MESSAGES["no_approval_steps"].format(stage_name=first_stage.name_en)
-        )
+        logger.warning(LOG_MESSAGES["no_approval_steps"].format(stage_name=location))
 
     # Trigger workflow start actions AFTER approval setup
     # This ensures current_approver context is available
     trigger_workflow_event(
-        attachment, ActionType.ON_WORKFLOW_START, initial_stage=first_stage, user=user
+        attachment,
+        ActionType.ON_WORKFLOW_START,
+        initial_stage=first_stage,  # Will be None for strategies 2 and 3
+        initial_pipeline=first_pipeline,  # Will be None for strategy 3
+        user=user,
     )
 
-    logger.info(
-        f"Workflow started for {obj._meta.label}({obj.pk}) at stage '{first_stage.name_en}'"
-    )
+    logger.info(f"Workflow started for {obj._meta.label}({obj.pk}) at {location}")
 
     return attachment
 
 
 def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
-    """Move object to the next stage in workflow.
+    """Move object to the next stage/pipeline in workflow (strategy-aware).
 
     Note: This method should only be called internally by approval handlers
     (on_final_approve), not directly by API endpoints.
+
+    Strategy 1: Moves from stage to stage
+    Strategy 2: Moves from pipeline to pipeline
+    Strategy 3: No movement (completes immediately)
 
     Args:
         obj: The model instance to move
@@ -445,6 +513,8 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
         Updated WorkflowAttachment instance
     """
     from django.contrib.contenttypes.models import ContentType
+
+    from .choices import WorkflowStrategy
 
     content_type = ContentType.objects.get_for_model(obj)
 
@@ -464,11 +534,13 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
             ERROR_MESSAGES["workflow_not_in_progress"].format(status=attachment.status)
         )
 
-    current_stage = attachment.current_stage
-    next_stage = attachment.next_stage
+    strategy = attachment.workflow.strategy
+    next_item = (
+        attachment.next_stage
+    )  # May be a Stage (strategy 1) or Pipeline (strategy 2) or None (strategy 3)
 
-    if not next_stage:
-        # Workflow complete
+    if not next_item:
+        # Workflow complete (happens for all strategies when no more items)
         logger.info(
             ERROR_MESSAGES["no_next_stage"].format(
                 obj_label=obj._meta.label, obj_pk=obj.pk
@@ -476,32 +548,126 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
         )
         return complete_workflow(obj, user)
 
-    # Check if moving to new pipeline
-    current_pipeline = attachment.current_pipeline
-    next_pipeline = next_stage.pipeline
-    pipeline_changed = (
-        current_pipeline and next_pipeline and current_pipeline.id != next_pipeline.id
-    )
+    # Strategy-specific handling
+    if strategy == WorkflowStrategy.WORKFLOW_PIPELINE_STAGE:
+        # Strategy 1: Full hierarchy - next_item is a Stage
+        next_stage = next_item
+        current_stage = attachment.current_stage
+        next_pipeline = next_stage.pipeline
+        current_pipeline = attachment.current_pipeline
 
-    # Update attachment
-    old_stage = attachment.current_stage
-    old_pipeline = attachment.current_pipeline
-
-    attachment.current_stage = next_stage
-    attachment.current_pipeline = next_pipeline
-    attachment.save()
-
-    logger.debug(
-        f"Moving {obj._meta.label}({obj.pk}) from stage '{old_stage.name_en if old_stage else 'None'}' "
-        f"to '{next_stage.name_en}' (pipeline: {next_pipeline.name_en if next_pipeline else 'None'})"
-    )
-
-    # Trigger workflow actions
-    if pipeline_changed:
-        # Trigger pipeline move actions
-        logger.info(
-            f"Pipeline changed from '{old_pipeline.name_en}' to '{next_pipeline.name_en}'"
+        pipeline_changed = (
+            current_pipeline
+            and next_pipeline
+            and current_pipeline.id != next_pipeline.id
         )
+
+        # Update attachment
+        old_stage = attachment.current_stage
+        old_pipeline = attachment.current_pipeline
+
+        attachment.current_stage = next_stage
+        attachment.current_pipeline = next_pipeline
+        attachment.save()
+
+        logger.debug(
+            f"Strategy 1: Moving {obj._meta.label}({obj.pk}) from stage '{old_stage.name_en if old_stage else 'None'}' "
+            f"to '{next_stage.name_en}' (pipeline: {next_pipeline.name_en if next_pipeline else 'None'})"
+        )
+
+        # Trigger workflow actions
+        if pipeline_changed:
+            logger.info(
+                f"Pipeline changed from '{old_pipeline.name_en}' to '{next_pipeline.name_en}'"
+            )
+            trigger_workflow_event(
+                attachment,
+                ActionType.AFTER_MOVE_PIPELINE,
+                from_pipeline=old_pipeline,
+                to_pipeline=next_pipeline,
+                user=user,
+            )
+
+        trigger_workflow_event(
+            attachment,
+            ActionType.AFTER_MOVE_STAGE,
+            from_stage=old_stage,
+            to_stage=next_stage,
+            user=user,
+        )
+
+        # Extend approval flow for next stage
+        from approval_workflow.models import ApprovalFlow
+        from approval_workflow.services import extend_flow
+
+        from .constants import LOG_MESSAGES
+        from .utils import build_approval_steps, get_user_for_approval
+
+        approval_user = get_user_for_approval(obj, user, attachment)
+        steps = build_approval_steps(next_stage, approval_user)
+
+        if steps:
+            content_type = ContentType.objects.get_for_model(obj)
+            try:
+                flow = ApprovalFlow.objects.get(
+                    content_type=content_type, object_id=str(obj.pk)
+                )
+
+                existing_instances = flow.instances.all()
+                max_step = (
+                    max([inst.step_number for inst in existing_instances])
+                    if existing_instances
+                    else 0
+                )
+
+                for step_data in steps:
+                    step_data["step"] = max_step + step_data["step"]
+
+                extend_flow(flow, steps)
+
+                logger.info(
+                    LOG_MESSAGES["approval_flow_started"].format(
+                        stage_name=next_stage.name_en, step_count=len(steps)
+                    )
+                    + f" (steps {max_step + 1} onwards)"
+                )
+            except ApprovalFlow.DoesNotExist:
+                logger.error(
+                    f"No existing approval flow found for {obj._meta.label}({obj.pk}). "
+                    "Cannot extend flow for next stage."
+                )
+        else:
+            logger.warning(
+                LOG_MESSAGES["no_approval_steps"].format(stage_name=next_stage.name_en)
+            )
+
+        logger.info(
+            LOG_MESSAGES["stage_moved"].format(
+                obj_label=obj._meta.label,
+                obj_pk=obj.pk,
+                from_stage=old_stage.name_en if old_stage else "None",
+                to_stage=next_stage.name_en,
+            )
+        )
+
+    elif strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+        # Strategy 2: Pipeline only - next_item is a Pipeline
+        next_pipeline = next_item
+        current_pipeline = attachment.current_pipeline
+
+        # Update attachment
+        old_pipeline = attachment.current_pipeline
+
+        attachment.current_pipeline = next_pipeline
+        attachment.current_stage = None  # No stages in Strategy 2
+        attachment.save()
+
+        logger.debug(
+            f"Strategy 2: Moving {obj._meta.label}({obj.pk}) from pipeline '{old_pipeline.name_en if old_pipeline else 'None'}' "
+            f"to '{next_pipeline.name_en}'"
+        )
+
+        # Trigger pipeline move actions
         trigger_workflow_event(
             attachment,
             ActionType.AFTER_MOVE_PIPELINE,
@@ -510,76 +676,71 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
             user=user,
         )
 
-    # Trigger stage move actions
-    trigger_workflow_event(
-        attachment,
-        ActionType.AFTER_MOVE_STAGE,
-        from_stage=old_stage,
-        to_stage=next_stage,
-        user=user,
-    )
+        # Extend approval flow for next pipeline (extract from pipeline_info)
+        from approval_workflow.models import ApprovalFlow
+        from approval_workflow.services import extend_flow
 
-    # Extend approval flow for next stage
-    from approval_workflow.models import ApprovalFlow
-    from approval_workflow.services import extend_flow
+        from .constants import LOG_MESSAGES
+        from .utils import build_approval_steps_from_config, get_user_for_approval
 
-    from .constants import LOG_MESSAGES
-    from .utils import build_approval_steps, get_user_for_approval
+        approval_user = get_user_for_approval(obj, user, attachment)
 
-    # Get user for approval steps using centralized utility
-    approval_user = get_user_for_approval(obj, user, attachment)
+        # Build steps from pipeline_info using helper
+        pipeline_info = next_pipeline.pipeline_info or {}
+        approvals = pipeline_info.get("approvals", [])
 
-    steps = build_approval_steps(next_stage, approval_user)
-    if steps:
-        # Get existing approval flow for this object
-        from django.contrib.contenttypes.models import ContentType
+        steps = build_approval_steps_from_config(
+            approvals=approvals,
+            approval_user=approval_user,
+            extra_fields={"pipeline_id": next_pipeline.id},
+            start_step=1,  # Will be adjusted below with max_step
+        )
 
-        content_type = ContentType.objects.get_for_model(obj)
-        try:
-            flow = ApprovalFlow.objects.get(
-                content_type=content_type, object_id=str(obj.pk)
-            )
-
-            # Get the highest existing step number to continue numbering
-            existing_instances = flow.instances.all()
-            max_step = (
-                max([inst.step_number for inst in existing_instances])
-                if existing_instances
-                else 0
-            )
-
-            # Update step numbers to continue from the last step
-            for step_data in steps:
-                step_data["step"] = max_step + step_data["step"]
-
-            # Extend the existing flow instead of creating a new one
-            extend_flow(flow, steps)
-
-            logger.info(
-                LOG_MESSAGES["approval_flow_started"].format(
-                    stage_name=next_stage.name_en, step_count=len(steps)
+        if steps:
+            content_type = ContentType.objects.get_for_model(obj)
+            try:
+                flow = ApprovalFlow.objects.get(
+                    content_type=content_type, object_id=str(obj.pk)
                 )
-                + f" (steps {max_step + 1} onwards)"
+
+                existing_instances = flow.instances.all()
+                max_step = (
+                    max([inst.step_number for inst in existing_instances])
+                    if existing_instances
+                    else 0
+                )
+
+                for step_data in steps:
+                    step_data["step"] = max_step + step_data["step"]
+
+                extend_flow(flow, steps)
+
+                logger.info(
+                    f"Strategy 2: Extended approval flow for pipeline '{next_pipeline.name_en}' with {len(steps)} steps "
+                    f"(steps {max_step + 1} onwards)"
+                )
+            except ApprovalFlow.DoesNotExist:
+                logger.error(
+                    f"No existing approval flow found for {obj._meta.label}({obj.pk}). "
+                    "Cannot extend flow for next pipeline."
+                )
+        else:
+            logger.warning(
+                f"Strategy 2: No approval steps found for pipeline '{next_pipeline.name_en}'"
             )
-        except ApprovalFlow.DoesNotExist:
-            # This shouldn't happen, but fall back to logging an error
-            logger.error(
-                f"No existing approval flow found for {obj._meta.label}({obj.pk}). "
-                "Cannot extend flow for next stage."
-            )
-    else:
-        logger.warning(
-            LOG_MESSAGES["no_approval_steps"].format(stage_name=next_stage.name_en)
+
+        logger.info(
+            f"Strategy 2: Pipeline moved from '{old_pipeline.name_en if old_pipeline else 'None'}' "
+            f"to '{next_pipeline.name_en}' for {obj._meta.label}({obj.pk})"
         )
 
-    logger.info(
-        LOG_MESSAGES["stage_moved"].format(
-            obj_label=obj._meta.label,
-            obj_pk=obj.pk,
-            from_stage=old_stage.name_en,
-            to_stage=next_stage.name_en,
+    elif strategy == WorkflowStrategy.WORKFLOW_ONLY:
+        # Strategy 3: No stages or pipelines - this shouldn't be called as next_stage returns None
+        # But handle gracefully just in case
+        logger.warning(
+            f"Strategy 3: move_to_next_stage called for workflow-only strategy. Completing workflow."
         )
-    )
+        return complete_workflow(obj, user)
 
     return attachment
 

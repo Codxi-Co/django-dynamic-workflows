@@ -170,22 +170,31 @@ class WorkflowApprovalSerializer(serializers.Serializer):
         # Check if there are current approval instances
         current_approval = get_current_approval_for_object(self.instance)
         if not current_approval:
+            # Get location based on strategy
+            from .utils import get_workflow_location_string
+
+            location = get_workflow_location_string(attachment)
+
             logger.error(
                 f"Validation failed: No current approval step - "
                 f"workflow_id: {attachment.workflow.id}, "
-                f"stage: {attachment.current_stage.name_en if attachment.current_stage else 'None'}, "
+                f"{location}, "
                 f"object: {self.instance._meta.label}({self.instance.pk})"
             )
             raise serializers.ValidationError(
                 _("No current approval step found for this object")
             )
 
-        # Log successful validation
+        # Log successful validation with strategy-aware location
+        from .utils import get_workflow_location_string
+
+        location = get_workflow_location_string(attachment)
+
         logger.info(
             f"Action validation passed - "
             f"action: {value}, "
             f"workflow_id: {attachment.workflow.id}, "
-            f"stage: {attachment.current_stage.name_en if attachment.current_stage else 'None'}, "
+            f"{location}, "
             f"object: {self.instance._meta.label}({self.instance.pk})"
         )
         serializers_logger.log_action(
@@ -388,23 +397,27 @@ class WorkflowApprovalSerializer(serializers.Serializer):
 
         # Log the approval action attempt
         attachment = get_workflow_attachment(self.instance)
+
+        # Get location based on strategy
+        from .utils import get_workflow_location_string
+
+        location_str = (
+            get_workflow_location_string(attachment) if attachment else "unknown"
+        )
+
         logger.info(
             f"Processing approval action - "
             f"action: {action}, "
             f"user: {user.id if user else 'Anonymous'}, "
             f"workflow: {attachment.workflow.id if attachment else 'None'}, "
-            f"stage: {attachment.current_stage.name_en if attachment and attachment.current_stage else 'None'}, "
+            f"location: {location_str}, "
             f"object: {self.instance._meta.label}({self.instance.pk})"
         )
 
         serializers_logger.log_approval_action(
             action=action.value if hasattr(action, "value") else str(action),
             workflow_id=attachment.workflow.id if attachment else None,
-            stage=(
-                attachment.current_stage.name_en
-                if attachment and attachment.current_stage
-                else "unknown"
-            ),
+            stage=location_str,
             user_id=user.id if user else None,
             object_type=self.instance._meta.label,
             object_id=str(self.instance.pk),
@@ -642,7 +655,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
         return enriched
 
     def _update_workflow_attachment(self, action, user=None):
-        """Update workflow attachment status based on action."""
+        """Update workflow attachment status based on action (strategy-aware)."""
         logger.debug(f"Updating workflow attachment for action: {action}")
 
         attachment = get_workflow_attachment(self.instance)
@@ -651,9 +664,15 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             return
 
         if action == ApprovalStatus.REJECTED:
+            # Get location based on strategy for logging
+            from .utils import get_workflow_location_string
+
+            location_str = get_workflow_location_string(attachment)
+
             logger.info(
                 f"Marking workflow as rejected - "
                 f"workflow_id: {attachment.workflow.id}, "
+                f"{location_str}, "
                 f"object: {self.instance._meta.label}({self.instance.pk})"
             )
 
@@ -669,17 +688,18 @@ class WorkflowApprovalSerializer(serializers.Serializer):
                 attachment,
                 ActionType.AFTER_REJECT,
                 target_object=self.instance,
-                stage=attachment.current_stage,
+                stage=attachment.current_stage,  # Will be None for strategies 2 and 3
+                pipeline=attachment.current_pipeline,  # Will be None for strategy 3
                 user=user,
             )
 
             logger.info(
                 f"Workflow rejection completed - "
                 f"workflow_id: {attachment.workflow.id}, "
-                f"stage: {attachment.current_stage.name_en if attachment.current_stage else 'None'}"
+                f"{location_str}"
             )
 
-        # Note: Approval progression to next stage is handled by the approval workflow
+        # Note: Approval progression to next stage/pipeline is handled by the approval workflow
         # through handlers (on_final_approve, etc.) - no automatic progression here
 
 
@@ -996,6 +1016,42 @@ class PipelineSerializer(serializers.ModelSerializer):
             "workflow": {"required": False},  # Set by parent WorkFlowSerializer
         }
 
+    def validate(self, attrs):
+        """Validate pipeline creation based on parent workflow strategy."""
+        from .choices import WorkflowStrategy
+
+        workflow = attrs.get("workflow")
+        number_of_stages = attrs.get("number_of_stages", 0)
+
+        # If workflow is provided, check its strategy
+        if workflow:
+            # Strategy 3 (Workflow Only): NO pipelines allowed at all
+            if workflow.strategy == WorkflowStrategy.WORKFLOW_ONLY:
+                raise serializers.ValidationError(
+                    {
+                        "workflow": "Cannot create pipelines for Strategy 3 (Workflow Only) workflows. Approvals must be at workflow level."
+                    }
+                )
+
+            # Strategy 2 (Workflow→Pipeline): NO stages allowed
+            if workflow.strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+                if number_of_stages > 0:
+                    raise serializers.ValidationError(
+                        {
+                            "number_of_stages": "Cannot create stages for Strategy 2 (Workflow→Pipeline) workflows. Approvals must be at pipeline level."
+                        }
+                    )
+                # Check pipeline_info has approvals
+                pipeline_info = attrs.get("pipeline_info", {})
+                if not pipeline_info or not pipeline_info.get("approvals"):
+                    raise serializers.ValidationError(
+                        {
+                            "pipeline_info": "Strategy 2 pipeline requires approvals in pipeline_info."
+                        }
+                    )
+
+        return attrs
+
     def create(self, validated_data):
         """Create pipeline with auto-generated stages and custom actions."""
         number_of_stages = validated_data.pop("number_of_stages", 0)
@@ -1072,6 +1128,58 @@ class WorkFlowSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "company": {"required": False},
         }
+
+    def validate(self, attrs):
+        """Validate workflow creation based on strategy constraints.
+
+        Note: This only validates pipelines IF they are provided in the request.
+        Workflows can be created without nested pipelines and have them added later.
+        """
+        from .choices import WorkflowStrategy
+
+        strategy = attrs.get("strategy", WorkflowStrategy.WORKFLOW_PIPELINE_STAGE)
+        pipelines_data = attrs.get("pipelines", [])
+        workflow_info = attrs.get("workflow_info", {})
+
+        # Only validate if pipelines data is actually provided
+        if pipelines_data:
+            # Strategy 3 (Workflow Only): NO pipelines allowed if provided
+            if strategy == WorkflowStrategy.WORKFLOW_ONLY:
+                raise serializers.ValidationError(
+                    {
+                        "pipelines": "Strategy 3 (Workflow Only) cannot have pipelines. Approvals must be in workflow_info only."
+                    }
+                )
+
+            # Strategy 2 (Workflow→Pipeline): NO stages allowed in pipelines
+            elif strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+                for i, pipeline_data in enumerate(pipelines_data):
+                    # Check if pipeline has stages defined
+                    if "stages" in pipeline_data or "number_of_stages" in pipeline_data:
+                        raise serializers.ValidationError(
+                            {
+                                f"pipelines[{i}]": "Strategy 2 (Workflow→Pipeline) cannot have stages. Approvals must be in pipeline_info."
+                            }
+                        )
+                    # Check if pipeline has pipeline_info with approvals
+                    pipeline_info = pipeline_data.get("pipeline_info", {})
+                    if not pipeline_info or not pipeline_info.get("approvals"):
+                        raise serializers.ValidationError(
+                            {
+                                f"pipelines[{i}].pipeline_info": "Strategy 2 pipeline must have approvals in pipeline_info."
+                            }
+                        )
+
+        # For Strategy 3, validate workflow_info if provided
+        if strategy == WorkflowStrategy.WORKFLOW_ONLY and workflow_info:
+            if not workflow_info.get("approvals"):
+                raise serializers.ValidationError(
+                    {
+                        "workflow_info": "Strategy 3 (Workflow Only) requires approvals in workflow_info."
+                    }
+                )
+
+        return attrs
 
     def create(self, validated_data):
         """Create workflow with nested pipelines, stages, and custom actions."""
@@ -1192,36 +1300,62 @@ class StageSerializer(serializers.ModelSerializer):
         }
 
     def validate(self, attrs):
-        """Validate pipeline is provided either from URL or body."""
+        """Validate pipeline is provided and check workflow strategy constraints."""
+        from .choices import WorkflowStrategy
+
         # If updating existing instance, pipeline is already set
         if self.instance:
-            return attrs
+            pipeline = self.instance.pipeline
+        else:
+            # For create operations, check pipeline from context (URL) or body
+            pipeline = attrs.get("pipeline")
 
-        # For create operations, check pipeline from context (URL) or body
-        pipeline = attrs.get("pipeline")
+            # Check if pipeline is in context (from URL kwargs)
+            if not pipeline and self.context.get("view"):
+                view = self.context["view"]
+                pipeline_id = view.kwargs.get("pipeline") or view.kwargs.get(
+                    "pipeline_pk"
+                )
+                if pipeline_id:
+                    try:
+                        from .models import Pipeline
 
-        # Check if pipeline is in context (from URL kwargs)
-        if not pipeline and self.context.get("view"):
-            view = self.context["view"]
-            pipeline_id = view.kwargs.get("pipeline") or view.kwargs.get("pipeline_pk")
-            if pipeline_id:
-                try:
-                    from .models import Pipeline
+                        pipeline = Pipeline.objects.get(id=pipeline_id)
+                        attrs["pipeline"] = pipeline
+                    except Pipeline.DoesNotExist:
+                        raise serializers.ValidationError(
+                            {
+                                "pipeline": f"Pipeline with id {pipeline_id} does not exist"
+                            }
+                        )
 
-                    pipeline = Pipeline.objects.get(id=pipeline_id)
-                    attrs["pipeline"] = pipeline
-                except Pipeline.DoesNotExist:
-                    raise serializers.ValidationError(
-                        {"pipeline": f"Pipeline with id {pipeline_id} does not exist"}
-                    )
+            # If still no pipeline, it's required
+            if not pipeline:
+                raise serializers.ValidationError(
+                    {
+                        "pipeline": "Pipeline is required. Provide it in the request body or URL."
+                    }
+                )
 
-        # If still no pipeline, it's required
-        if not pipeline:
-            raise serializers.ValidationError(
-                {
-                    "pipeline": "Pipeline is required. Provide it in the request body or URL."
-                }
-            )
+        # Check workflow strategy - stages not allowed for Strategy 2 and 3
+        if pipeline and pipeline.workflow:
+            workflow = pipeline.workflow
+
+            # Strategy 3 (Workflow Only): NO stages allowed
+            if workflow.strategy == WorkflowStrategy.WORKFLOW_ONLY:
+                raise serializers.ValidationError(
+                    {
+                        "pipeline": "Cannot create stages for Strategy 3 (Workflow Only) workflows. Approvals must be at workflow level only."
+                    }
+                )
+
+            # Strategy 2 (Workflow→Pipeline): NO stages allowed
+            if workflow.strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+                raise serializers.ValidationError(
+                    {
+                        "pipeline": "Cannot create stages for Strategy 2 (Workflow→Pipeline) workflows. Approvals must be at pipeline level."
+                    }
+                )
 
         return attrs
 

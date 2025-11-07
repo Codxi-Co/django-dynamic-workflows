@@ -5,6 +5,219 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2025-11-07
+
+### 🚀 Major Feature: Flexible Workflow Strategy System
+
+This release introduces a groundbreaking **3-tier workflow strategy system** that allows you to structure workflows at different organizational levels based on your business needs.
+
+#### ✨ New Features
+
+##### Workflow Strategy Enum
+- **Strategy 1 (WORKFLOW_PIPELINE_STAGE)**: Full 3-level hierarchy
+  - Workflow → Pipeline → Stage structure
+  - Approvals configured at **STAGE level** (stage_info)
+  - Ideal for complex, multi-department approval processes
+  - Example: Large purchase approvals with multiple review stages
+
+- **Strategy 2 (WORKFLOW_PIPELINE)**: 2-level hierarchy
+  - Workflow → Pipeline structure (NO stages allowed)
+  - Approvals configured at **PIPELINE level** (pipeline_info)
+  - Perfect for departmental workflows without stage granularity
+  - Example: Department-level approval workflows
+
+- **Strategy 3 (WORKFLOW_ONLY)**: Single-level hierarchy
+  - Workflow only (NO pipelines or stages allowed)
+  - Approvals configured at **WORKFLOW level** (workflow_info)
+  - Best for simple, single-step approval processes
+  - Example: Quick approval workflows with one approval step
+
+##### Strategy-Aware Functions
+- **`validate_completeness()`**: Enforces structural constraints based on strategy
+  - Strategy 1: Validates pipelines and stages exist with stage-level approvals
+  - Strategy 2: Validates pipelines exist with pipeline-level approvals, ensures NO stages
+  - Strategy 3: Validates workflow-level approvals, ensures NO pipelines or stages
+
+- **`build_approval_steps()`**: Extracts approvals from correct location
+  - Strategy 1: Reads from `stage.stage_info['approvals']`
+  - Strategy 2: Reads from `pipeline.pipeline_info['approvals']`
+  - Strategy 3: Reads from `workflow.workflow_info['approvals']`
+
+- **`start_workflow_for_object()`**: Strategy-aware workflow initialization
+  - Completely rewritten to handle all 3 strategies
+  - No longer depends only on stages
+  - Creates appropriate approval steps based on strategy
+
+- **`move_to_next_stage()`**: Strategy-aware workflow progression
+  - Handles stage transitions for Strategy 1
+  - Handles pipeline transitions for Strategy 2
+  - Handles workflow completion for Strategy 3
+
+##### Code Quality Improvements
+- **Eliminated Code Duplication**: Created reusable helper functions
+  - `build_approval_steps_from_config()`: Centralized approval step building (Strategy 2 & 3)
+  - `get_workflow_location_string()`: Centralized location string generation
+  - Removed 120+ lines of duplicated code
+
+- **Enhanced Serializer Validation**: Added strategy-aware validation
+  - `WorkFlowSerializer`: Validates strategy constraints during workflow creation
+  - `PipelineSerializer`: Prevents pipeline creation for Strategy 3 workflows
+  - `StageSerializer`: Prevents stage creation for Strategy 2 & 3 workflows
+  - Flexible validation: Only validates if nested data is provided
+
+##### Comprehensive Logging
+- **Strategy-Aware Logging**: All workflow operations now log strategy context
+  - Clear identification of which strategy is being used
+  - Location strings show: "stage: X", "pipeline: Y", or "workflow: Z"
+  - Better debugging with strategy-specific information
+
+#### 🔧 Changed
+
+- **Breaking Change**: Workflow strategy definitions reversed to match business logic
+  - Strategy 1 (value=1): Now WORKFLOW_PIPELINE_STAGE (was WORKFLOW_ONLY)
+  - Strategy 2 (value=2): Now WORKFLOW_PIPELINE (unchanged)
+  - Strategy 3 (value=3): Now WORKFLOW_ONLY (was WORKFLOW_PIPELINE_STAGE)
+  - **Migration**: Existing workflows will need strategy values updated
+
+- **Enhanced `next_stage` Property**: Now strategy-aware
+  - Returns next stage for Strategy 1
+  - Returns next pipeline for Strategy 2
+  - Returns None for Strategy 3 (no progression)
+
+#### 🐛 Fixed
+
+- Fixed `start_workflow_for_object()` dependency on stages
+  - Now works correctly for all 3 strategies
+  - No longer assumes stages always exist
+
+- Fixed approval step extraction logic
+  - Correctly reads from strategy-appropriate location
+  - Handles missing approval configurations gracefully
+
+- Fixed stage progression for Strategy 2 & 3
+  - Strategy 2: Moves between pipelines, not stages
+  - Strategy 3: Completes workflow immediately
+
+#### 📚 Documentation
+
+- Added comprehensive workflow strategy documentation to README
+  - Strategy selection guide
+  - Use case examples for each strategy
+  - API usage examples
+  - Best practices
+
+- Updated all code examples to reflect new strategy system
+
+#### 🧪 Testing
+
+- **Added comprehensive strategy tests**: 3 new test files
+  - `test_workflow_strategies.py`: Tests for all 3 strategies
+  - Tests cover workflow creation, progression, and completion
+  - Tests validate structural constraints
+
+- **All 339 tests passing**: Full backward compatibility maintained
+  - Existing functionality preserved
+  - New strategy features thoroughly tested
+
+#### 📋 Technical Details
+
+**Files Changed**:
+- `django_workflow_engine/choices.py`: Updated strategy enum definitions
+- `django_workflow_engine/models.py`: Updated `validate_completeness()` and `next_stage`
+- `django_workflow_engine/services.py`: Rewrote `start_workflow_for_object()` and `move_to_next_stage()`
+- `django_workflow_engine/utils.py`: Added helper functions, updated `build_approval_steps()`
+- `django_workflow_engine/serializers.py`: Added strategy validation, removed duplication
+- `tests/test_workflow_strategies.py`: Added comprehensive strategy tests
+
+**Backward Compatibility**:
+- Existing workflows continue to work with default Strategy 1
+- No database migration required for new installations
+- Existing installations should verify strategy values match intended behavior
+
+**Performance**:
+- Code deduplication improves maintainability
+- No performance degradation from new features
+- Helper functions improve code efficiency
+
+#### 🎯 Use Cases
+
+**Strategy 1 - Complex Multi-Department Workflows**:
+```python
+# Example: Large purchase approval
+# Finance → Initial Review → Budget Approval → CFO Sign-off
+# Management → Executive Review → CEO Approval
+workflow = WorkFlow.objects.create(
+    strategy=WorkflowStrategy.WORKFLOW_PIPELINE_STAGE,
+    name_en="Large Purchase Approval"
+)
+```
+
+**Strategy 2 - Departmental Workflows**:
+```python
+# Example: Department-level approvals
+# HR Department → Recruitment Approval
+# Finance Department → Budget Allocation
+workflow = WorkFlow.objects.create(
+    strategy=WorkflowStrategy.WORKFLOW_PIPELINE,
+    name_en="Department Approvals"
+)
+```
+
+**Strategy 3 - Simple Approval Workflows**:
+```python
+# Example: Quick approval
+# Single approval step, no complex hierarchy
+workflow = WorkFlow.objects.create(
+    strategy=WorkflowStrategy.WORKFLOW_ONLY,
+    name_en="Simple Approval"
+)
+```
+
+#### 🔄 Migration Guide
+
+**For Existing Projects**:
+
+1. **Review Current Strategy Values**: Check if your workflows use the intended strategy
+   ```python
+   for workflow in WorkFlow.objects.all():
+       print(f"{workflow.name_en}: Strategy {workflow.strategy}")
+   ```
+
+2. **Update Strategy Values if Needed**: The enum values were reversed
+   ```python
+   # If a workflow was Strategy 1 (WORKFLOW_ONLY) but should be WORKFLOW_PIPELINE_STAGE:
+   workflow.strategy = WorkflowStrategy.WORKFLOW_PIPELINE_STAGE  # Now value 1
+   workflow.save()
+   ```
+
+3. **Verify Structural Consistency**: Run validation to ensure workflows are properly configured
+   ```python
+   is_valid, message = workflow.validate_completeness()
+   print(f"{workflow.name_en}: {message}")
+   ```
+
+4. **Test Workflow Progression**: Verify workflows progress correctly after update
+   ```python
+   # Test workflow start and progression
+   attachment = attach_workflow_to_object(obj, workflow, user, auto_start=True)
+   ```
+
+**For New Projects**:
+- Choose the appropriate strategy based on your needs
+- Configure approvals in the correct location (stage_info, pipeline_info, or workflow_info)
+- Use serializers for validation during workflow creation
+
+#### 💡 Benefits
+
+- ✅ **Flexibility**: Choose the right hierarchy level for your use case
+- ✅ **Simplicity**: Simple workflows don't need complex structures
+- ✅ **Clarity**: Strategy names clearly indicate structure
+- ✅ **Validation**: Automatic enforcement of structural constraints
+- ✅ **Maintainability**: Reduced code duplication, cleaner codebase
+- ✅ **Scalability**: Supports workflows of any complexity level
+
+---
+
 ## [1.4.3] - 2025-10-25
 
 ### ✨ Added

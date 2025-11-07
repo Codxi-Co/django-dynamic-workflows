@@ -4,6 +4,7 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 
 ## Features
 
+- **Flexible Workflow Strategies** ⭐ NEW in v1.5.0: Choose from 3 hierarchy levels (Stage/Pipeline/Workflow-only) based on complexity
 - **Generic Workflow Attachment**: Attach workflows to any Django model without hardcoded relationships
 - **Database-Stored Actions**: Configure actions dynamically in the database with inheritance system
 - **3-Tier Action Priority System**: Database → Settings → Default action resolution (no conflicts)
@@ -345,6 +346,281 @@ attachment = attach_workflow_to_object(
 - **WorkFlow**: Top-level workflow definition
 - **Pipeline**: Departments or phases within a workflow
 - **Stage**: Individual approval steps within a pipeline
+
+## Workflow Strategy System
+
+**New in v1.5.0**: The workflow engine now supports **3 flexible strategies** for structuring your approval workflows based on organizational complexity.
+
+### Strategy Overview
+
+Choose the right strategy based on your workflow complexity and organizational structure:
+
+| Strategy | Value | Structure | Approvals Location | Use Case |
+|----------|-------|-----------|-------------------|----------|
+| **WORKFLOW_PIPELINE_STAGE** | 1 | Workflow → Pipeline → Stage | `stage_info` | Complex multi-department workflows with detailed stages |
+| **WORKFLOW_PIPELINE** | 2 | Workflow → Pipeline | `pipeline_info` | Department-level approvals without stage granularity |
+| **WORKFLOW_ONLY** | 3 | Workflow only | `workflow_info` | Simple single-step approval workflows |
+
+### Strategy 1: WORKFLOW_PIPELINE_STAGE (Full Hierarchy)
+
+**Best For**: Complex workflows with multiple departments and detailed approval stages
+
+**Structure**:
+```
+Workflow
+  ├── Pipeline 1 (Finance Department)
+  │   ├── Stage 1 (Initial Review) ← Approvals here
+  │   ├── Stage 2 (Budget Check) ← Approvals here
+  │   └── Stage 3 (CFO Approval) ← Approvals here
+  └── Pipeline 2 (Management)
+      └── Stage 1 (Executive Approval) ← Approvals here
+```
+
+**Configuration Example**:
+```python
+from django_workflow_engine.models import WorkFlow, Pipeline, Stage
+from django_workflow_engine.choices import WorkflowStrategy, ApprovalTypes
+from approval_workflow.choices import RoleSelectionStrategy
+
+# Create workflow with Strategy 1
+workflow = WorkFlow.objects.create(
+    name_en="Purchase Request Approval",
+    strategy=WorkflowStrategy.WORKFLOW_PIPELINE_STAGE,
+    company=user,
+    is_active=True
+)
+
+# Create pipeline
+finance_pipeline = Pipeline.objects.create(
+    workflow=workflow,
+    name_en="Finance Review",
+    order=0
+)
+
+# Create stage with approvals in stage_info
+initial_review = Stage.objects.create(
+    pipeline=finance_pipeline,
+    name_en="Initial Review",
+    order=0,
+    stage_info={
+        "color": "#3498db",
+        "approvals": [
+            {
+                "approval_type": ApprovalTypes.ROLE,
+                "user_role": finance_role.id,
+                "role_selection_strategy": RoleSelectionStrategy.ANYONE
+            }
+        ]
+    }
+)
+```
+
+**Use Cases**:
+- Large purchase approvals with multiple review stages
+- Complex HR workflows (recruitment → onboarding → training)
+- Multi-department project approvals
+- Detailed compliance workflows
+
+### Strategy 2: WORKFLOW_PIPELINE (Two-Level)
+
+**Best For**: Department-based workflows without stage-level detail
+
+**Structure**:
+```
+Workflow
+  ├── Pipeline 1 (HR Department) ← Approvals here
+  ├── Pipeline 2 (Finance Department) ← Approvals here
+  └── Pipeline 3 (Legal Department) ← Approvals here
+
+Note: NO stages allowed in Strategy 2
+```
+
+**Configuration Example**:
+```python
+# Create workflow with Strategy 2
+workflow = WorkFlow.objects.create(
+    name_en="Employee Onboarding",
+    strategy=WorkflowStrategy.WORKFLOW_PIPELINE,
+    company=user,
+    is_active=True
+)
+
+# Create pipeline with approvals in pipeline_info
+hr_pipeline = Pipeline.objects.create(
+    workflow=workflow,
+    name_en="HR Processing",
+    order=0,
+    pipeline_info={
+        "approvals": [
+            {
+                "approval_type": ApprovalTypes.ROLE,
+                "user_role": hr_manager_role.id,
+                "role_selection_strategy": RoleSelectionStrategy.ANYONE
+            }
+        ]
+    }
+)
+
+# IMPORTANT: Do NOT create stages for Strategy 2 workflows
+# Stages are not allowed and will be rejected by validation
+```
+
+**Use Cases**:
+- Department-based approval workflows
+- Sequential departmental reviews
+- Cross-functional team approvals
+- Simple multi-step processes
+
+### Strategy 3: WORKFLOW_ONLY (Single-Level)
+
+**Best For**: Simple, single-step approval workflows
+
+**Structure**:
+```
+Workflow ← Approvals here
+
+Note: NO pipelines or stages allowed in Strategy 3
+```
+
+**Configuration Example**:
+```python
+# Create workflow with Strategy 3
+workflow = WorkFlow.objects.create(
+    name_en="Time Off Request",
+    strategy=WorkflowStrategy.WORKFLOW_ONLY,
+    company=user,
+    is_active=True,
+    workflow_info={
+        "approvals": [
+            {
+                "approval_type": ApprovalTypes.USER,
+                "approval_user": manager.id
+            }
+        ]
+    }
+)
+
+# IMPORTANT: Do NOT create pipelines or stages for Strategy 3 workflows
+# They are not allowed and will be rejected by validation
+```
+
+**Use Cases**:
+- Simple manager approval workflows
+- Quick sign-off processes
+- Single-step authorization
+- Lightweight approval needs
+
+### Strategy Selection Guide
+
+**Choose Strategy 1** if you need:
+- Multiple departments with detailed stages
+- Complex approval chains with many steps
+- Fine-grained control over each approval stage
+- Different forms/requirements per stage
+
+**Choose Strategy 2** if you need:
+- Department-level approvals without stage detail
+- Sequential departmental reviews
+- Simpler structure than Strategy 1
+- Each department approves as a unit
+
+**Choose Strategy 3** if you need:
+- Single approval step
+- Minimal complexity
+- Quick implementation
+- One approver or approval group
+
+### Strategy Validation
+
+The system automatically validates structural constraints:
+
+```python
+# Strategy 1: Requires pipelines with stages
+workflow = WorkFlow.objects.create(strategy=1, ...)
+is_valid, msg = workflow.validate_completeness()
+# Returns: False, "Strategy 1 workflow must have at least one pipeline"
+
+# Strategy 2: Requires pipelines, NO stages allowed
+workflow = WorkFlow.objects.create(strategy=2, ...)
+pipeline = Pipeline.objects.create(workflow=workflow, ...)
+stage = Stage.objects.create(pipeline=pipeline, ...)  # ❌ ValidationError!
+# Error: "Strategy 2 (Workflow→Pipeline) cannot have stages."
+
+# Strategy 3: NO pipelines or stages allowed
+workflow = WorkFlow.objects.create(strategy=3, ...)
+pipeline = Pipeline.objects.create(workflow=workflow, ...)  # ❌ ValidationError!
+# Error: "Cannot create pipelines for Strategy 3 (Workflow Only) workflows."
+```
+
+### Using Serializers with Strategies
+
+The serializers automatically validate strategy constraints:
+
+```python
+from django_workflow_engine.serializers import WorkFlowSerializer
+
+# Strategy 1: Full hierarchy
+workflow_data = {
+    "name_en": "Complex Approval",
+    "strategy": 1,  # WORKFLOW_PIPELINE_STAGE
+    "pipelines": [
+        {
+            "name_en": "Finance",
+            "stages": [
+                {
+                    "name_en": "Review",
+                    "stage_info": {
+                        "approvals": [{"approval_type": "role", "user_role": 1}]
+                    }
+                }
+            ]
+        }
+    ]
+}
+
+# Strategy 2: Pipeline-level only
+workflow_data = {
+    "name_en": "Department Approval",
+    "strategy": 2,  # WORKFLOW_PIPELINE
+    "pipelines": [
+        {
+            "name_en": "HR",
+            "pipeline_info": {
+                "approvals": [{"approval_type": "role", "user_role": 2}]
+            }
+            # Note: No "stages" field - not allowed for Strategy 2
+        }
+    ]
+}
+
+# Strategy 3: Workflow-level only
+workflow_data = {
+    "name_en": "Simple Approval",
+    "strategy": 3,  # WORKFLOW_ONLY
+    "workflow_info": {
+        "approvals": [{"approval_type": "user", "approval_user": 123}]
+    }
+    # Note: No "pipelines" field - not allowed for Strategy 3
+}
+
+serializer = WorkFlowSerializer(data=workflow_data)
+if serializer.is_valid():
+    workflow = serializer.save()
+```
+
+### Strategy Migration
+
+If you're upgrading from a previous version, your existing workflows will continue to work. The default strategy is Strategy 1 (WORKFLOW_PIPELINE_STAGE).
+
+To verify your workflows are using the correct strategy:
+
+```python
+from django_workflow_engine.models import WorkFlow
+
+for workflow in WorkFlow.objects.all():
+    is_valid, message = workflow.validate_completeness()
+    print(f"{workflow.name_en} (Strategy {workflow.strategy}): {message}")
+```
 
 ### Configurable Actions
 - Database-stored function paths executed on workflow events
