@@ -5,6 +5,29 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.1] - 2025-11-08
+
+### 🐛 Critical Bug Fix
+
+#### Fixed Migration Default Value Issue
+- **CRITICAL**: Fixed incorrect default value in migration `0005_add_workflow_strategy_system.py`
+- **Issue**: Migration set `strategy` default to `3` (WORKFLOW_ONLY) instead of `1` (WORKFLOW_PIPELINE_STAGE)
+- **Impact**: All existing workflows were incorrectly set to strategy 3 after migration, causing workflows to complete prematurely after first approval
+- **Root Cause**: Migration had wrong strategy value mapping in choices and incorrect default
+- **Solution**:
+  - Updated migration 0005 to use correct default value (`1` instead of `3`)
+  - Added data migration 0006 to automatically fix existing workflows based on their structure
+  - Workflows with pipelines and stages → strategy 1 (WORKFLOW_PIPELINE_STAGE)
+  - Workflows with pipelines only → strategy 2 (WORKFLOW_PIPELINE)
+  - Workflows without pipelines → strategy 3 (WORKFLOW_ONLY)
+
+#### Migration Guide for v1.5.0 Users
+If you already upgraded to v1.5.0 and experienced workflows completing after first approval:
+1. Pull the latest code (v1.5.1)
+2. Run migrations: `python manage.py migrate django_workflow_engine`
+3. The data migration will automatically fix all affected workflows
+4. All workflows will now work correctly with proper stage progression
+
 ## [1.5.0] - 2025-11-07
 
 ### 🚀 Major Feature: Flexible Workflow Strategy System

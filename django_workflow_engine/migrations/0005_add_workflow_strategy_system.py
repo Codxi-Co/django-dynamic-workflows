@@ -25,12 +25,12 @@ class Migration(migrations.Migration):
             name="strategy",
             field=models.IntegerField(
                 choices=[
-                    (1, "Workflow Only - Approvals at workflow level"),
+                    (1, "Workflow → Pipeline → Stage - Approvals at stage level"),
                     (2, "Workflow → Pipeline - Approvals at pipeline level"),
-                    (3, "Workflow → Pipeline → Stage - Approvals at stage level"),
+                    (3, "Workflow Only - Approvals at workflow level"),
                 ],
-                default=3,
-                help_text="Workflow approval strategy: 1=Workflow only, 2=Workflow→Pipeline, 3=Workflow→Pipeline→Stage",
+                default=1,
+                help_text="Workflow approval strategy: 1=Workflow→Pipeline→Stage, 2=Workflow→Pipeline, 3=Workflow only",
                 verbose_name="Workflow Strategy",
             ),
         ),
