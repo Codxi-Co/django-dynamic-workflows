@@ -1,7 +1,7 @@
 """Models for django_workflow_engine Django app.
 
 Workflow management models (WorkFlow, Pipeline, Stage) for creating and managing
-dynamic multi-step workflows. Integrates with django-approval-workflow package
+dynamic multistep workflows. Integrates with django-approval-workflow package
 for approval flow functionality.
 """
 
@@ -16,9 +16,10 @@ from django.db import models, transaction
 from django.db.models import Q
 from django.utils.translation import gettext_lazy as _
 
+from approval_workflow.choices import ApprovalType
+
 from .choices import (
     ActionType,
-    ApprovalType,
     ApprovalTypes,
     WorkflowAttachmentStatus,
     WorkflowStatus,
@@ -33,7 +34,7 @@ User = get_user_model()
 class BaseCompanyModel(models.Model):
     """Base model for company-scoped models."""
 
-    # Optional company field - uses User model for company association
+    # Optional company field - uses a User model for company association
     company = models.ForeignKey(
         settings.AUTH_USER_MODEL,
         on_delete=models.SET_NULL,
@@ -176,7 +177,7 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
         verbose_name_plural = _("Workflows")
 
     def validate_completeness(self):
-        """Validate if workflow is complete and can be activated (strategy-aware).
+        """Validate if the workflow is complete and can be activated (strategy-aware).
 
         Uses select_related/prefetch_related for optimal performance.
 
@@ -325,7 +326,7 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
             pipeline_mapping = {}  # Maps old pipeline to new pipeline data
 
             for pipeline in pipelines:
-                # Create new pipeline instance (not saved yet)
+                # Create a new pipeline instance (not saved yet)
                 new_pipeline = Pipeline(
                     workflow=cloned_workflow,
                     company=pipeline.company,
@@ -453,7 +454,7 @@ class Pipeline(CompanyBaseWithNamedModelWithClone):
 
     @property
     def department_name(self):
-        """Get department name from the generic foreign key."""
+        """Get the department name from the generic foreign key."""
         if not self.department:
             return None
 
@@ -504,7 +505,7 @@ class Stage(CompanyBaseWithNamedModelWithClone):
         unique_together = [("pipeline", "order")]
 
     def is_complete(self):
-        """Check if stage is properly configured and complete."""
+        """Check if the stage is properly configured and complete."""
         # Stage must have stage_info
         if not self.stage_info or not isinstance(self.stage_info, dict):
             return False
@@ -519,7 +520,7 @@ class Stage(CompanyBaseWithNamedModelWithClone):
             if not self._validate_approval_config(approval):
                 return False
 
-        # If all validations pass and stage is active, it's complete
+        # If all validations pass and the stage is active, it's complete
         return self.is_active
 
     def _validate_approval_config(self, approval_config):
@@ -536,7 +537,7 @@ class Stage(CompanyBaseWithNamedModelWithClone):
         if approval_type not in valid_types:
             return False
 
-        # Validate based on approval type
+        # Validate based on an approval type
         if approval_type == ApprovalTypes.ROLE and not approval_config.get("user_role"):
             return False
         elif approval_type == ApprovalTypes.USER and not approval_config.get(
@@ -576,7 +577,7 @@ class Stage(CompanyBaseWithNamedModelWithClone):
         return True
 
     def save(self, *args, **kwargs):
-        """Override save to update workflow active status when stage changes."""
+        """Override saves to update the workflow active status when stage changes."""
         # Check if we should skip workflow update (for bulk operations)
         skip_workflow_update = kwargs.pop("skip_workflow_update", False)
 
@@ -690,7 +691,7 @@ class WorkflowAttachment(models.Model):
     @property
     def progress_percentage(self):
         """Calculate workflow completion percentage."""
-        # Check terminal states first (completed, rejected, cancelled)
+        # Check terminal states first (completed, rejected, canceled)
         if self.status in ["completed", "rejected", "cancelled"]:
             return 100 if self.status == "completed" else 0
 
@@ -698,7 +699,7 @@ class WorkflowAttachment(models.Model):
         if not self.current_stage or self.status == "not_started":
             return 0
 
-        # Calculate based on current position
+        # Calculate based on the current position
         total_stages = 0
         current_stage_position = 0
 
@@ -723,30 +724,30 @@ class WorkflowAttachment(models.Model):
         - Strategy 2 (Workflow→Pipeline): Move to next pipeline (no stages exist)
         - Strategy 3 (Workflow Only): No movement, returns None (workflow completes after approvals)
         """
-        # Get workflow strategy
+        # Get a workflow strategy
         strategy = self.workflow.strategy
 
         # Strategy 3 (Workflow Only): No movement between stages/pipelines
-        # All approvals are at workflow level, so once complete, workflow is done
+        # All approvals are at workflow level, so once complete, the workflow is done
         if strategy == WorkflowStrategy.WORKFLOW_ONLY:
             logger.debug(
                 f"Strategy 3 (Workflow Only) - No next stage, workflow will complete after approvals"
             )
             return None
 
-        # Strategy 2 (Workflow→Pipeline): Move to next pipeline (no stages exist)
+        # Strategy 2 (Workflow→Pipeline): Move to the next pipeline (no stages exist)
         if strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
             current_pipeline = self.current_pipeline
 
             if not current_pipeline:
-                # Return first pipeline if no current pipeline set
+                # Return the first pipeline if no current pipeline set
                 first_pipeline = self.workflow.pipelines.order_by("order").first()
                 logger.debug(
                     f"Strategy 2 (Workflow→Pipeline) - No current pipeline, returning first pipeline"
                 )
                 return first_pipeline  # Note: This returns a Pipeline, not a Stage
 
-            # Move to next pipeline
+            # Move to the next pipeline
             next_pipeline = (
                 self.workflow.pipelines.filter(order__gt=current_pipeline.order)
                 .order_by("order")
@@ -766,7 +767,7 @@ class WorkflowAttachment(models.Model):
 
         # Strategy 1 (Workflow→Pipeline→Stage): Default behavior - move stage to stage (full hierarchy)
         if not self.current_stage:
-            # Return first stage of first pipeline
+            # Return first stage of the first pipeline
             first_pipeline = self.workflow.pipelines.order_by("order").first()
             if first_pipeline:
                 first_stage = first_pipeline.stages.order_by("order").first()
@@ -777,7 +778,7 @@ class WorkflowAttachment(models.Model):
                     return first_stage
             return None
 
-        # Use current_pipeline field for consistency, fallback to current_stage.pipeline
+        # Use the current_pipeline field for consistency, fallback to current_stage.pipeline
         current_pipeline = self.current_pipeline or self.current_stage.pipeline
 
         if not current_pipeline:
@@ -786,7 +787,7 @@ class WorkflowAttachment(models.Model):
             )
             return None
 
-        # Try to get next stage in current pipeline
+        # Try to get the next stage in the current pipeline
         next_stage = (
             current_pipeline.stages.filter(order__gt=self.current_stage.order)
             .order_by("order")
@@ -799,7 +800,7 @@ class WorkflowAttachment(models.Model):
             )
             return next_stage
 
-        # Move to next pipeline
+        # Move to the next pipeline
         next_pipeline = (
             self.workflow.pipelines.filter(order__gt=current_pipeline.order)
             .order_by("order")

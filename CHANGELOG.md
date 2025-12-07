@@ -5,6 +5,38 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.2] - 2025-12-07
+
+### ✨ Added
+- **Django 6.0 Support**: Added official support for Django 6.0 (released December 3, 2025)
+  - Package now supports Django versions 4.0 through 6.0
+  - All 339 tests pass successfully with Django 6.0
+  - No deprecation warnings or compatibility issues detected
+
+### 🔧 Changed
+- **Dependency Update**: Removed version constraint from `django-approval-workflow` dependency
+  - Changed from `django-approval-workflow>=0.8.4` to `django-approval-workflow`
+  - Allows for more flexible dependency resolution and compatibility with latest versions
+- **Updated to django-approval-workflow 0.8.6**: Upgraded from 0.8.2 to 0.8.6
+  - Includes `ApprovalType` enum in `approval_workflow.choices`
+  - Fixed import compatibility issues
+
+### 🐛 Fixed
+- **Import Error Fix**: Fixed `ImportError: cannot import name 'ApprovalType'`
+  - Resolved by upgrading `django-approval-workflow` to version 0.8.6
+  - Added missing `drf-spectacular` dependency for OpenAPI schema support
+  - Fixed test imports to use correct module paths for `RoleSelectionStrategy`
+
+### 📦 Dependencies
+- **Added**: `drf-spectacular>=0.29.0` for API schema generation
+- **Upgraded**: `django-approval-workflow` to 0.8.6
+
+### ✅ Verified
+- Full test suite passes (339 tests) with upgraded dependencies
+- Django system checks pass with no issues
+- Package builds successfully for distribution
+- Compatible with Python 3.10, 3.11, and 3.12
+
 ## [1.5.1] - 2025-11-08
 
 ### 🐛 Critical Bug Fix

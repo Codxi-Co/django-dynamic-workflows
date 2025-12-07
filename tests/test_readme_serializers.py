@@ -611,8 +611,10 @@ class TestReadmeCompleteWorkflowExample:
     def test_update_stage_info_with_role_approval(
         self, company_user, request_with_user
     ):
-        """Test updating stage with role-based approval configuration."""
-        from django_workflow_engine.choices import ApprovalTypes, RoleSelectionStrategy
+        """Test the updating stage with role-based approval configuration."""
+        from approval_workflow.choices import RoleSelectionStrategy
+
+        from django_workflow_engine.choices import ApprovalTypes
 
         # Create a workflow with pipeline
         workflow_data = {
