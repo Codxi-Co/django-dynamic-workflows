@@ -8,6 +8,8 @@ creators and approvers.
 import logging
 from typing import Any, Dict
 
+from django.conf import settings
+
 logger = logging.getLogger(__name__)
 
 
@@ -527,16 +529,21 @@ def _try_async_email(recipients: list, subject: str, message: str) -> bool:
             from celery import current_app
 
             if current_app:
-                # Queue email task asynchronously
-                current_app.send_task(
-                    "django_workflow_engine.tasks.send_email_task",
-                    args=[recipients, subject, message],
-                    ignore_result=True,
-                )
-                logger.debug(f"Email queued to Celery for {recipients}")
-                return True
-        except (ImportError, Exception):
-            pass
+                # Get email task path from settings
+                email_task_path = getattr(settings, "WORKFLOW_EMAIL_TASK", None)
+                if email_task_path:
+                    # Queue email task asynchronously
+                    current_app.send_task(
+                        email_task_path,
+                        args=[recipients, subject, message],
+                        ignore_result=True,
+                    )
+                    logger.debug(f"Email queued to {email_task_path} for {recipients}")
+                    return True
+                else:
+                    logger.debug("WORKFLOW_EMAIL_TASK not configured, skipping Celery")
+        except (ImportError, Exception) as e:
+            logger.debug(f"Celery email queuing failed: {str(e)}")
 
         # Try Django-Q
         try:

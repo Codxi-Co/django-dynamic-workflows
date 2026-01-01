@@ -368,7 +368,7 @@ class DefaultActionsTest(TestCase):
         result = default_send_email_after_approve(**context)
         self.assertFalse(result)
 
-    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", False)
+    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", False, create=True)
     @patch("django_workflow_engine.default_actions._try_async_email")
     @patch("django.core.mail.send_mail")
     def test_send_email_function(self, mock_send_mail, mock_async_email):
@@ -392,7 +392,7 @@ class DefaultActionsTest(TestCase):
             fail_silently=True,  # Changed to True for non-blocking behavior
         )
 
-    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", False)
+    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", False, create=True)
     @patch("django_workflow_engine.default_actions._try_async_email")
     @patch("django.core.mail.send_mail")
     def test_send_email_function_failure(self, mock_send_mail, mock_async_email):
@@ -409,7 +409,7 @@ class DefaultActionsTest(TestCase):
 
         self.assertFalse(result)
 
-    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", False)
+    @patch("django.conf.settings.WORKFLOW_DISABLE_EMAILS", False, create=True)
     @patch("django_workflow_engine.default_actions._try_async_email")
     def test_send_email_with_async(self, mock_async_email):
         """Test _send_email function with async email enabled."""

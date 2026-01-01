@@ -575,18 +575,18 @@ class ActionPriorityEdgeCasesTest(TestCase):
 
     @override_settings(WORKFLOW_ACTIONS_CONFIG=[])
     def test_empty_settings_config_uses_default(self):
-        """Test that empty settings config falls through to defaults."""
+        """Test that empty settings config disables all actions.
+
+        When WORKFLOW_ACTIONS_CONFIG is set to an empty list [], it means
+        the user wants to disable all workflow actions completely.
+        """
         # Get effective actions with empty config
         actions = get_effective_actions(
             ActionType.AFTER_APPROVE, workflow=self.workflow
         )
 
-        # Should return default action
-        self.assertEqual(len(actions), 1)
-        self.assertEqual(
-            actions[0].function_path,
-            "django_workflow_engine.action_handlers.send_approval_notification",
-        )
+        # Should return empty list - all actions disabled
+        self.assertEqual(len(actions), 0)
 
     @override_settings(
         WORKFLOW_ACTIONS_CONFIG=[
@@ -598,15 +598,16 @@ class ActionPriorityEdgeCasesTest(TestCase):
         ]
     )
     def test_settings_config_filters_by_action_type(self):
-        """Test that settings config correctly filters by action type."""
-        # Get actions for AFTER_APPROVE (config has AFTER_REJECT)
+        """Test that settings config correctly filters by action type.
+
+        When WORKFLOW_ACTIONS_CONFIG is set but doesn't include a specific
+        action_type, no action should be performed (empty list returned).
+        This allows users to explicitly disable certain action types.
+        """
+        # Get actions for AFTER_APPROVE (config has AFTER_REJECT only)
         actions = get_effective_actions(
             ActionType.AFTER_APPROVE, workflow=self.workflow
         )
 
-        # Should return default action for AFTER_APPROVE
-        self.assertEqual(len(actions), 1)
-        self.assertEqual(
-            actions[0].function_path,
-            "django_workflow_engine.action_handlers.send_approval_notification",
-        )
+        # Should return empty list - user doesn't want AFTER_APPROVE actions
+        self.assertEqual(len(actions), 0)

@@ -409,7 +409,19 @@ def get_effective_actions(
     # Priority 2: Check settings for configured actions
     settings_actions_config = getattr(settings, "WORKFLOW_ACTIONS_CONFIG", None)
 
-    if settings_actions_config:
+    # Check if WORKFLOW_ACTIONS_CONFIG is explicitly set (even if empty)
+    # - None/not set → use defaults (Priority 3)
+    # - [] (empty list) → disable all actions (return empty)
+    # - [...] (has items) → use only configured actions
+    if settings_actions_config is not None:
+        # WORKFLOW_ACTIONS_CONFIG is explicitly configured
+        # Empty list means "disable all actions"
+        if not settings_actions_config:
+            logger.debug(
+                f"WORKFLOW_ACTIONS_CONFIG is empty - all actions disabled for {action_type}"
+            )
+            return []
+
         # Filter actions by action_type
         matching_configs = [
             config
@@ -435,8 +447,16 @@ def get_effective_actions(
                 )
                 settings_actions.append(action)
             return settings_actions
+        else:
+            # WORKFLOW_ACTIONS_CONFIG has actions but action_type not included
+            # This means user explicitly doesn't want any action for this type
+            logger.debug(
+                f"WORKFLOW_ACTIONS_CONFIG is set but {action_type} not configured - "
+                "no action will be performed"
+            )
+            return []
 
-    # Priority 3: Use default actions as fallback
+    # Priority 3: Use default actions as fallback (only if WORKFLOW_ACTIONS_CONFIG not set)
     logger.debug(
         f"No DB or settings actions found for {action_type}, checking default actions"
     )

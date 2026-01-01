@@ -5,6 +5,73 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.4] - 2026-01-01
+
+### 🐛 Fixed
+
+#### Email Task Configuration
+- **Fixed hardcoded email task path in `default_actions.py`**
+  - Previously hardcoded `"django_workflow_engine.tasks.send_email_task"` causing KeyError when task didn't exist
+  - Now reads configurable `WORKFLOW_EMAIL_TASK` setting from Django settings
+  - Gracefully falls back to synchronous email or Django-Q if `WORKFLOW_EMAIL_TASK` not configured
+  - Improved logging to show which task path is being used
+  - Better exception handling for Celery email queuing failures
+  - **File**: `django_workflow_engine/default_actions.py:532-546`
+
+#### Django 5.x/6.x Migration Compatibility
+- **Fixed `CheckConstraint` compatibility between Django versions**
+  - Django 6.0+ uses `condition` parameter for `CheckConstraint`
+  - Django < 6.0 uses `check` parameter for `CheckConstraint`
+  - Added helper function `create_check_constraint()` to handle both versions automatically
+  - Ensures migrations work seamlessly across all supported Django versions (4.0-6.0)
+  - **File**: `django_workflow_engine/migrations/0001_initial.py:10-22, 626`
+
+### 🔧 Changed
+
+#### Action Configuration Behavior
+- **Improved `WORKFLOW_ACTIONS_CONFIG` settings handling**
+  - **Empty list behavior**: `WORKFLOW_ACTIONS_CONFIG = []` now disables ALL actions (previously fell back to defaults)
+  - **Missing action_type behavior**: When `WORKFLOW_ACTIONS_CONFIG` is set but doesn't include a specific action_type, no action is performed for that event (previously fell back to defaults)
+  - **Not configured**: When `WORKFLOW_ACTIONS_CONFIG` is `None` or not set, defaults are still used
+  - This allows users to explicitly control which action types should run and which should be disabled
+  - **Benefit**: Users can now selectively disable certain workflow actions by omitting them from the config
+  - **File**: `django_workflow_engine/action_management.py:409-463`
+
+### 📝 Examples
+
+#### Configuring Custom Email Task
+```python
+# settings.py
+WORKFLOW_EMAIL_TASK = "myapp.tasks.custom_email_task"
+```
+
+#### Disabling Specific Action Types
+```python
+# settings.py
+# Only enable AFTER_APPROVE actions, disable all others
+WORKFLOW_ACTIONS_CONFIG = [
+    {
+        'action_type': 'after_approve',
+        'function_path': 'myapp.actions.send_approval_email',
+        'order': 1,
+    }
+]
+# AFTER_REJECT, AFTER_DELEGATE, etc. will NOT run
+```
+
+#### Disabling All Actions
+```python
+# settings.py
+# Disable all workflow actions completely
+WORKFLOW_ACTIONS_CONFIG = []
+```
+
+### ✅ Verified
+- All 339 tests pass with changes
+- Django 6.0 and 5.x compatibility confirmed
+- Backward compatible with existing configurations
+- No breaking changes for users not using these settings
+
 ## [1.5.2] - 2025-12-07
 
 ### ✨ Added
