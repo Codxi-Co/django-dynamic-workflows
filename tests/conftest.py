@@ -71,10 +71,9 @@ def mock_email_backend():
 
 @pytest.fixture(autouse=True)
 def mock_async_email_backend():
-    """Mock async email attempts to prevent task queue operations in tests."""
-    with patch("django_workflow_engine.default_actions._try_async_email") as mock_async:
-        mock_async.return_value = False  # No async email available by default
-        yield mock_async
+    """Deprecated: No longer needed as package doesn't send emails."""
+    # Package no longer sends emails, so no need to mock
+    yield None
 
 
 # Remove auto-mocking that breaks tests - use selective mocking instead

@@ -1,4 +1,4 @@
-"""Tests for 3-tier action priority system and timing fixes."""
+"""Tests for 2-tier action priority system and timing fixes (no automatic default actions)."""
 
 from unittest.mock import MagicMock, Mock, patch
 
@@ -18,7 +18,7 @@ User = get_user_model()
 
 @override_settings(WORKFLOW_AUTO_CREATE_ACTIONS=False)
 class ActionPrioritySystemTest(TestCase):
-    """Test 3-tier action priority system: Database > Settings > Default."""
+    """Test 2-tier action priority system: Database > Settings (no automatic defaults)."""
 
     def setUp(self):
         """Set up test data."""
@@ -220,11 +220,11 @@ class ActionPrioritySystemTest(TestCase):
         self.assertEqual(actions[1].function_path, "tests.settings_handler_2")
         self.assertEqual(actions[1].order, 2)
 
-    def test_priority_3_default_actions_fallback(self):
-        """Test that default actions used when no database or settings actions."""
+    def test_no_actions_when_none_configured(self):
+        """Test that no actions execute when nothing is configured."""
         # No database actions, no settings actions
 
-        # Get effective actions for AFTER_APPROVE (has default)
+        # Get effective actions for AFTER_APPROVE
         actions = get_effective_actions(
             ActionType.AFTER_APPROVE,
             workflow=self.workflow,
@@ -232,13 +232,8 @@ class ActionPrioritySystemTest(TestCase):
             stage=self.stage,
         )
 
-        # Should return default action
-        self.assertEqual(len(actions), 1)
-        self.assertIsNone(actions[0].id)  # Not saved to DB
-        self.assertEqual(
-            actions[0].function_path,
-            "django_workflow_engine.action_handlers.send_approval_notification",
-        )
+        # Should return empty list - no actions configured
+        self.assertEqual(len(actions), 0)
 
     def test_priority_no_mixing_database_and_settings(self):
         """Test that database actions prevent settings actions from running."""
@@ -488,15 +483,14 @@ class ActionLoggingTest(TestCase):
         self.assertEqual(len(actions), 1)
         self.assertIsNone(actions[0].id)
 
-    def test_default_action_has_no_id(self):
-        """Test that default actions have no ID (not saved to DB)."""
+    def test_no_actions_when_none_configured_logging(self):
+        """Test that no actions returned when nothing configured."""
         actions = get_effective_actions(
             ActionType.AFTER_APPROVE, workflow=self.workflow
         )
 
-        # Default action should not have ID
-        self.assertEqual(len(actions), 1)
-        self.assertIsNone(actions[0].id)
+        # No actions should be returned
+        self.assertEqual(len(actions), 0)
 
 
 @override_settings(WORKFLOW_AUTO_CREATE_ACTIONS=False)
@@ -559,22 +553,18 @@ class ActionPriorityEdgeCasesTest(TestCase):
             self.assertEqual(actions[0].function_path, "tests.settings_handler")
 
     @override_settings(WORKFLOW_ACTIONS_CONFIG=None)
-    def test_none_settings_config_uses_default(self):
-        """Test that None settings config falls through to defaults."""
+    def test_none_settings_config_returns_empty(self):
+        """Test that None settings config returns empty list."""
         # Get effective actions with None config
         actions = get_effective_actions(
             ActionType.AFTER_APPROVE, workflow=self.workflow
         )
 
-        # Should return default action
-        self.assertEqual(len(actions), 1)
-        self.assertEqual(
-            actions[0].function_path,
-            "django_workflow_engine.action_handlers.send_approval_notification",
-        )
+        # Should return empty list - no actions configured
+        self.assertEqual(len(actions), 0)
 
     @override_settings(WORKFLOW_ACTIONS_CONFIG=[])
-    def test_empty_settings_config_uses_default(self):
+    def test_empty_settings_config_returns_empty(self):
         """Test that empty settings config disables all actions.
 
         When WORKFLOW_ACTIONS_CONFIG is set to an empty list [], it means

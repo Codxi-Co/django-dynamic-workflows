@@ -1,569 +1,127 @@
-"""Default action functions for workflow events.
+"""Deprecated: Default action functions (no longer used).
 
-These functions are called automatically when no custom actions are configured
-for specific workflow events. They provide basic email notifications to
-creators and approvers.
+IMPORTANT: As of v1.5.5, this package does NOT send emails automatically.
+These functions are kept for backward compatibility but do nothing except log warnings.
+
+To implement email notifications:
+1. Create your own action handlers in your application
+2. Configure them via WorkflowAction model or WORKFLOW_ACTIONS_CONFIG setting
+3. Use your own email sending logic (Django mail, SendGrid, etc.)
+
+Example implementation in your app:
+    # myapp/workflow_actions.py
+    from django.core.mail import send_mail
+
+    def send_approval_email(**context):
+        attachment = context.get('attachment')
+        obj = attachment.target
+
+        send_mail(
+            subject='Workflow Approved',
+            message=f'Your {obj} has been approved',
+            from_email='noreply@example.com',
+            recipient_list=[obj.created_by.email],
+        )
+        return True
 """
 
 import logging
 from typing import Any, Dict
 
-from django.conf import settings
-
 logger = logging.getLogger(__name__)
 
 
 def default_send_email_after_approve(**context) -> bool:
-    """Send an email notification after approval.
+    """Deprecated: No longer sends emails.
 
-    Args:
-        **context: Context including attachment, obj, current_stage, etc.
-
-    Returns:
-        True if email sent successfully, False otherwise
+    IMPORTANT: Implement your own version in your application.
     """
-    try:
-        attachment = context.get("attachment")
-        obj = context.get("obj")
-        current_stage = context.get("current_stage")
-        approver = context.get("user")
-
-        if not all([attachment, obj, current_stage]):
-            logger.warning("Missing required context for after_approve email")
-            return False
-
-        # Get email recipients (creator and approvers)
-        recipients = []
-
-        # Add creator email
-        if (
-            hasattr(obj, "created_by")
-            and obj.created_by
-            and hasattr(obj.created_by, "email")
-        ):
-            recipients.append(obj.created_by.email)
-
-        # Add workflow starter email
-        if attachment.started_by and hasattr(attachment.started_by, "email"):
-            recipients.append(attachment.started_by.email)
-
-        # Remove duplicates
-        recipients = list(set(filter(None, recipients)))
-
-        if not recipients:
-            logger.warning(f"No email recipients found for {obj._meta.label}({obj.pk})")
-            return False
-
-        # Prepare email content
-        subject = f"Approval Completed - {current_stage.name_en}"
-        message = f"""
-        The approval for {obj._meta.verbose_name} has been completed.
-
-        Stage: {current_stage.name_en}
-        Approver: {approver.get_full_name() if approver else 'System'}
-        Object: {str(obj)}
-
-        The workflow will continue to the next stage.
-        """
-
-        # Send email (implementation depends on your email backend)
-        return _send_email(recipients, subject, message, context)
-
-    except Exception as e:
-        logger.error(f"Error sending after_approve email: {str(e)}")
-        return False
+    logger.warning(
+        "default_send_email_after_approve called but does nothing. "
+        "Please implement your own email handler in your application code."
+    )
+    return False
 
 
 def default_send_email_after_reject(**context) -> bool:
-    """Send email notification after rejection.
+    """Deprecated: No longer sends emails.
 
-    Args:
-        **context: Context including attachment, obj, current_stage, etc.
-
-    Returns:
-        True if email sent successfully, False otherwise
+    IMPORTANT: Implement your own version in your application.
     """
-    try:
-        attachment = context.get("attachment")
-        obj = context.get("obj")
-        current_stage = context.get("current_stage")
-        reason = context.get("reason", "No reason provided")
-        rejector = context.get("user")
-
-        if not all([attachment, obj, current_stage]):
-            logger.warning("Missing required context for after_reject email")
-            return False
-
-        # Get email recipients
-        recipients = []
-
-        # Add creator email
-        if (
-            hasattr(obj, "created_by")
-            and obj.created_by
-            and hasattr(obj.created_by, "email")
-        ):
-            recipients.append(obj.created_by.email)
-
-        # Add workflow starter email
-        if attachment.started_by and hasattr(attachment.started_by, "email"):
-            recipients.append(attachment.started_by.email)
-
-        recipients = list(set(filter(None, recipients)))
-
-        if not recipients:
-            logger.warning(f"No email recipients found for {obj._meta.label}({obj.pk})")
-            return False
-
-        # Prepare email content
-        subject = f"Workflow Rejected - {current_stage.name_en}"
-        message = f"""
-        The workflow for {obj._meta.verbose_name} has been rejected.
-
-        Stage: {current_stage.name_en}
-        Rejector: {rejector.get_full_name() if rejector else 'System'}
-        Reason: {reason}
-        Object: {str(obj)}
-
-        Please review and resubmit if necessary.
-        """
-
-        return _send_email(recipients, subject, message, context)
-
-    except Exception as e:
-        logger.error(f"Error sending after_reject email: {str(e)}")
-        return False
+    logger.warning(
+        "default_send_email_after_reject called but does nothing. "
+        "Please implement your own email handler in your application code."
+    )
+    return False
 
 
 def default_send_email_after_resubmission(**context) -> bool:
-    """Send email notification after resubmission request.
+    """Deprecated: No longer sends emails.
 
-    Args:
-        **context: Context including attachment, obj, target_stage, etc.
-
-    Returns:
-        True if email sent successfully, False otherwise
+    IMPORTANT: Implement your own version in your application.
     """
-    try:
-        attachment = context.get("attachment")
-        obj = context.get("obj")
-        target_stage = context.get("target_stage")
-        reason = context.get("reason", "No reason provided")
-        requester = context.get("user")
-
-        if not all([attachment, obj]):
-            logger.warning("Missing required context for after_resubmission email")
-            return False
-
-        # Get email recipients
-        recipients = []
-
-        if (
-            hasattr(obj, "created_by")
-            and obj.created_by
-            and hasattr(obj.created_by, "email")
-        ):
-            recipients.append(obj.created_by.email)
-
-        if attachment.started_by and hasattr(attachment.started_by, "email"):
-            recipients.append(attachment.started_by.email)
-
-        recipients = list(set(filter(None, recipients)))
-
-        if not recipients:
-            logger.warning(f"No email recipients found for {obj._meta.label}({obj.pk})")
-            return False
-
-        # Prepare email content
-        subject = f"Resubmission Requested - {obj._meta.verbose_name}"
-        message = f"""
-        A resubmission has been requested for {obj._meta.verbose_name}.
-
-        Target Stage: {target_stage.name_en if target_stage else 'Previous stage'}
-        Requester: {requester.get_full_name() if requester else 'System'}
-        Reason: {reason}
-        Object: {str(obj)}
-
-        Please review and make necessary changes before resubmitting.
-        """
-
-        return _send_email(recipients, subject, message, context)
-
-    except Exception as e:
-        logger.error(f"Error sending after_resubmission email: {str(e)}")
-        return False
+    logger.warning(
+        "default_send_email_after_resubmission called but does nothing. "
+        "Please implement your own email handler in your application code."
+    )
+    return False
 
 
 def default_send_email_after_delegate(**context) -> bool:
-    """Send email notification after delegation.
+    """Deprecated: No longer sends emails.
 
-    Args:
-        **context: Context including attachment, obj, delegate_to, etc.
-
-    Returns:
-        True if email sent successfully, False otherwise
+    IMPORTANT: Implement your own version in your application.
     """
-    try:
-        attachment = context.get("attachment")
-        obj = context.get("obj")
-        current_stage = context.get("current_stage")
-        delegate_to = context.get("delegate_to")
-        delegator = context.get("user")
-        reason = context.get("reason", "No reason provided")
-
-        if not all([attachment, obj, current_stage, delegate_to]):
-            logger.warning("Missing required context for after_delegate email")
-            return False
-
-        # Send email to delegate
-        if hasattr(delegate_to, "email") and delegate_to.email:
-            subject = f"Approval Delegated - {current_stage.name_en}"
-            message = f"""
-            An approval has been delegated to you.
-
-            Stage: {current_stage.name_en}
-            Delegator: {delegator.get_full_name() if delegator else 'System'}
-            Reason: {reason}
-            Object: {str(obj)}
-
-            Please review and approve or reject as appropriate.
-            """
-
-            return _send_email([delegate_to.email], subject, message, context)
-
-        return False
-
-    except Exception as e:
-        logger.error(f"Error sending after_delegate email: {str(e)}")
-        return False
+    logger.warning(
+        "default_send_email_after_delegate called but does nothing. "
+        "Please implement your own email handler in your application code."
+    )
+    return False
 
 
 def default_send_email_after_move_stage(**context) -> bool:
-    """Send email notification after moving to a new stage.
+    """Deprecated: No longer sends emails.
 
-    Args:
-        **context: Context including attachment, obj, from_stage, to_stage, etc.
-
-    Returns:
-        True if email sent successfully, False otherwise
+    IMPORTANT: Implement your own version in your application.
     """
-    try:
-        attachment = context.get("attachment")
-        obj = context.get("obj")
-        from_stage = context.get("from_stage")
-        to_stage = context.get("to_stage")
-
-        if not all([attachment, obj, to_stage]):
-            logger.warning("Missing required context for after_move_stage email")
-            return False
-
-        # Get email recipients
-        recipients = []
-
-        if (
-            hasattr(obj, "created_by")
-            and obj.created_by
-            and hasattr(obj.created_by, "email")
-        ):
-            recipients.append(obj.created_by.email)
-
-        if attachment.started_by and hasattr(attachment.started_by, "email"):
-            recipients.append(attachment.started_by.email)
-
-        recipients = list(set(filter(None, recipients)))
-
-        if not recipients:
-            logger.warning(f"No email recipients found for {obj._meta.label}({obj.pk})")
-            return False
-
-        # Prepare email content
-        subject = f"Workflow Progress - Moved to {to_stage.name_en}"
-        message = f"""
-        The workflow has progressed to a new stage.
-
-        From: {from_stage.name_en if from_stage else 'Start'}
-        To: {to_stage.name_en}
-        Object: {str(obj)}
-
-        The workflow is now awaiting approval at the new stage.
-        """
-
-        return _send_email(recipients, subject, message, context)
-
-    except Exception as e:
-        logger.error(f"Error sending after_move_stage email: {str(e)}")
-        return False
+    logger.warning(
+        "default_send_email_after_move_stage called but does nothing. "
+        "Please implement your own email handler in your application code."
+    )
+    return False
 
 
 def default_send_email_after_move_pipeline(**context) -> bool:
-    """Send email notification after moving to a new pipeline.
+    """Deprecated: No longer sends emails.
 
-    Args:
-        **context: Context including attachment, obj, from_pipeline, to_pipeline, etc.
-
-    Returns:
-        True if email sent successfully, False otherwise
+    IMPORTANT: Implement your own version in your application.
     """
-    try:
-        attachment = context.get("attachment")
-        obj = context.get("obj")
-        from_pipeline = context.get("from_pipeline")
-        to_pipeline = context.get("to_pipeline")
-
-        if not all([attachment, obj, to_pipeline]):
-            logger.warning("Missing required context for after_move_pipeline email")
-            return False
-
-        # Get email recipients
-        recipients = []
-
-        if (
-            hasattr(obj, "created_by")
-            and obj.created_by
-            and hasattr(obj.created_by, "email")
-        ):
-            recipients.append(obj.created_by.email)
-
-        if attachment.started_by and hasattr(attachment.started_by, "email"):
-            recipients.append(attachment.started_by.email)
-
-        recipients = list(set(filter(None, recipients)))
-
-        if not recipients:
-            logger.warning(f"No email recipients found for {obj._meta.label}({obj.pk})")
-            return False
-
-        # Prepare email content
-        subject = f"Workflow Progress - Moved to {to_pipeline.name_en} Pipeline"
-        message = f"""
-        The workflow has moved to a new pipeline.
-
-        From: {from_pipeline.name_en if from_pipeline else 'Previous pipeline'}
-        To: {to_pipeline.name_en}
-        Object: {str(obj)}
-
-        The workflow will continue in the new pipeline.
-        """
-
-        return _send_email(recipients, subject, message, context)
-
-    except Exception as e:
-        logger.error(f"Error sending after_move_pipeline email: {str(e)}")
-        return False
+    logger.warning(
+        "default_send_email_after_move_pipeline called but does nothing. "
+        "Please implement your own email handler in your application code."
+    )
+    return False
 
 
 def default_send_email_on_workflow_start(**context) -> bool:
-    """Send email notification when workflow starts.
+    """Deprecated: No longer sends emails.
 
-    Args:
-        **context: Context including attachment, obj, workflow, initial_stage, etc.
-
-    Returns:
-        True if email sent successfully, False otherwise
+    IMPORTANT: Implement your own version in your application.
     """
-    try:
-        attachment = context.get("attachment")
-        obj = context.get("obj")
-        workflow = context.get("workflow")
-        initial_stage = context.get("initial_stage")
-
-        if not all([attachment, obj, workflow]):
-            logger.warning("Missing required context for on_workflow_start email")
-            return False
-
-        # Get email recipients
-        recipients = []
-
-        if (
-            hasattr(obj, "created_by")
-            and obj.created_by
-            and hasattr(obj.created_by, "email")
-        ):
-            recipients.append(obj.created_by.email)
-
-        if attachment.started_by and hasattr(attachment.started_by, "email"):
-            recipients.append(attachment.started_by.email)
-
-        recipients = list(set(filter(None, recipients)))
-
-        if not recipients:
-            logger.warning(f"No email recipients found for {obj._meta.label}({obj.pk})")
-            return False
-
-        # Prepare email content
-        subject = f"Workflow Started - {workflow.name_en}"
-        message = f"""
-        A workflow has been started for {obj._meta.verbose_name}.
-
-        Workflow: {workflow.name_en}
-        Initial Stage: {initial_stage.name_en if initial_stage else 'N/A'}
-        Object: {str(obj)}
-
-        The approval process has begun.
-        """
-
-        return _send_email(recipients, subject, message, context)
-
-    except Exception as e:
-        logger.error(f"Error sending on_workflow_start email: {str(e)}")
-        return False
+    logger.warning(
+        "default_send_email_on_workflow_start called but does nothing. "
+        "Please implement your own email handler in your application code."
+    )
+    return False
 
 
 def default_send_email_on_workflow_complete(**context) -> bool:
-    """Send email notification when workflow completes.
+    """Deprecated: No longer sends emails.
 
-    Args:
-        **context: Context including attachment, obj, workflow, etc.
-
-    Returns:
-        True if email sent successfully, False otherwise
+    IMPORTANT: Implement your own version in your application.
     """
-    try:
-        attachment = context.get("attachment")
-        obj = context.get("obj")
-        workflow = context.get("workflow")
-
-        if not all([attachment, obj, workflow]):
-            logger.warning("Missing required context for on_workflow_complete email")
-            return False
-
-        # Get email recipients
-        recipients = []
-
-        if (
-            hasattr(obj, "created_by")
-            and obj.created_by
-            and hasattr(obj.created_by, "email")
-        ):
-            recipients.append(obj.created_by.email)
-
-        if attachment.started_by and hasattr(attachment.started_by, "email"):
-            recipients.append(attachment.started_by.email)
-
-        recipients = list(set(filter(None, recipients)))
-
-        if not recipients:
-            logger.warning(f"No email recipients found for {obj._meta.label}({obj.pk})")
-            return False
-
-        # Prepare email content
-        subject = f"Workflow Completed - {workflow.name_en}"
-        message = f"""
-        The workflow has been completed successfully.
-
-        Workflow: {workflow.name_en}
-        Object: {str(obj)}
-        Completed at: {attachment.completed_at}
-
-        All approvals have been obtained and the process is complete.
-        """
-
-        return _send_email(recipients, subject, message, context)
-
-    except Exception as e:
-        logger.error(f"Error sending on_workflow_complete email: {str(e)}")
-        return False
-
-
-def _send_email(
-    recipients: list, subject: str, message: str, context: Dict[str, Any]
-) -> bool:
-    """Send email using Django's email backend (async-safe).
-
-    Args:
-        recipients: List of email addresses
-        subject: Email subject
-        message: Email message body
-        context: Additional context (not used in basic implementation)
-
-    Returns:
-        True if email sent successfully, False otherwise
-    """
-    try:
-        from django.conf import settings
-
-        # Check if emails are disabled for performance
-        if getattr(settings, "WORKFLOW_DISABLE_EMAILS", False):
-            logger.debug(f"Emails disabled, skipping email to {recipients}")
-            return True
-
-        # Try async email sending first (Celery, Django-Q, etc.)
-        if _try_async_email(recipients, subject, message):
-            return True
-
-        # Fallback to synchronous email
-        from django.core.mail import send_mail
-
-        from_email = getattr(settings, "DEFAULT_FROM_EMAIL", "noreply@example.com")
-
-        send_mail(
-            subject=subject,
-            message=message,
-            from_email=from_email,
-            recipient_list=recipients,
-            fail_silently=True,  # Don't block on email failures
-        )
-
-        logger.info(f"Email sent successfully to {recipients}")
-        return True
-
-    except Exception as e:
-        logger.error(f"Failed to send email to {recipients}: {str(e)}")
-        return False
-
-
-def _try_async_email(recipients: list, subject: str, message: str) -> bool:
-    """Try to send email asynchronously using available task queue.
-
-    Args:
-        recipients: List of email addresses
-        subject: Email subject
-        message: Email message body
-
-    Returns:
-        True if async email was queued, False otherwise
-    """
-    try:
-        # Try Celery first
-        try:
-            from celery import current_app
-
-            if current_app:
-                # Get email task path from settings
-                email_task_path = getattr(settings, "WORKFLOW_EMAIL_TASK", None)
-                if email_task_path:
-                    # Queue email task asynchronously
-                    current_app.send_task(
-                        email_task_path,
-                        args=[recipients, subject, message],
-                        ignore_result=True,
-                    )
-                    logger.debug(f"Email queued to {email_task_path} for {recipients}")
-                    return True
-                else:
-                    logger.debug("WORKFLOW_EMAIL_TASK not configured, skipping Celery")
-        except (ImportError, Exception) as e:
-            logger.debug(f"Celery email queuing failed: {str(e)}")
-
-        # Try Django-Q
-        try:
-            from django_q.tasks import async_task
-
-            async_task(
-                "django.core.mail.send_mail",
-                subject,
-                message,
-                None,
-                recipients,
-                fail_silently=True,
-            )
-            logger.debug(f"Email queued to Django-Q for {recipients}")
-            return True
-        except (ImportError, Exception):
-            pass
-
-        return False
-
-    except Exception as e:
-        logger.debug(f"Could not queue async email: {str(e)}")
-        return False
+    logger.warning(
+        "default_send_email_on_workflow_complete called but does nothing. "
+        "Please implement your own email handler in your application code."
+    )
+    return False

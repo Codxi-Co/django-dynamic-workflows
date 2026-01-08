@@ -5,6 +5,122 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.5] - 2026-01-08
+
+### 🚨 BREAKING CHANGES
+
+#### No Automatic Email Sending
+**The package no longer sends emails**. This is a major architectural change that gives users complete control.
+
+- **Removed**: Automatic default action fallbacks that sent emails
+- **Removed**: Email sending implementation from all built-in action handlers
+- **Changed**: Package now provides **workflow orchestration only**, not email delivery
+- **Action**: Users must implement their own action handlers for email notifications
+
+#### Why This Change?
+- **No Mail Server Errors**: Eliminates errors when mail server not configured
+- **User Control**: Users decide how and when to send emails
+- **Flexibility**: Use any email service (Django mail, SendGrid, Mailgun, etc.)
+- **Separation of Concerns**: Workflow engine focuses on orchestration, not delivery
+
+### 🔄 Migration Guide
+
+**Before v1.5.5** (automatic emails):
+```python
+# Emails sent automatically - no configuration needed
+# But caused errors if mail server not configured
+```
+
+**After v1.5.5** (user-implemented):
+```python
+# 1. Create your action handlers
+# myapp/workflow_actions.py
+from django.core.mail import send_mail
+
+def send_approval_email(workflow_attachment, action_parameters, **context):
+    obj = workflow_attachment.target
+    send_mail(
+        subject='Workflow Approved',
+        message=f'Your {obj} has been approved!',
+        from_email='noreply@example.com',
+        recipient_list=[obj.created_by.email],
+    )
+    return True
+
+# 2. Configure actions to use YOUR handlers
+from django_workflow_engine.models import WorkflowAction
+from django_workflow_engine.choices import ActionType
+
+WorkflowAction.objects.create(
+    workflow=my_workflow,
+    action_type=ActionType.AFTER_APPROVE,
+    function_path='myapp.workflow_actions.send_approval_email',
+    is_active=True,
+    order=1,
+)
+```
+
+### ✨ What's Changed
+
+#### Action System Simplification
+- **2-Tier Priority System** (was 3-tier):
+  1. Database Actions (Stage → Pipeline → Workflow)
+  2. Settings-Based Actions (`WORKFLOW_ACTIONS_CONFIG`)
+  3. ~~Default Actions (REMOVED)~~
+
+- **No Actions Configured = No Actions Execute**: If no actions configured at any level, workflow proceeds without triggering any actions
+- **Explicit Configuration Required**: Users must explicitly configure any actions they want to execute
+
+#### Deprecated Functions (Now Stubs)
+All these functions now return `False` and log warnings:
+- `default_send_email_after_approve()`
+- `default_send_email_after_reject()`
+- `default_send_email_after_resubmission()`
+- `default_send_email_after_delegate()`
+- `default_send_email_after_move_stage()`
+- `default_send_email_after_move_pipeline()`
+- `default_send_email_on_workflow_start()`
+- `default_send_email_on_workflow_complete()`
+
+Action handlers in `action_handlers.py` are now example stubs:
+- `send_approval_notification()`
+- `send_rejection_notification()`
+- `send_resubmission_notification()`
+- `send_delegation_notification()`
+- `send_stage_move_notification()`
+
+#### Updated `create_default_workflow_actions()`
+- Function still exists but creates actions pointing to stub handlers
+- Marked as `DEPRECATED` in docstring
+- Better alternative: Use `create_custom_workflow_actions()` with your own function paths
+
+### 📝 Documentation Updates
+- **README.md**: Complete rewrite of email notification section
+- Added comprehensive examples for implementing custom action handlers
+- Clear explanation of available action hooks and context provided
+- Migration guide from v1.5.4 to v1.5.5
+
+### 🧪 Tests
+- Updated 331 tests to reflect new behavior
+- All tests passing
+- Removed email-sending expectations
+- Added tests for stub behavior
+
+### 📦 Files Changed
+- `django_workflow_engine/action_management.py`: Removed default action fallback (Priority 3)
+- `django_workflow_engine/services.py`: Removed DEFAULT_ACTIONS fallback in legacy system
+- `django_workflow_engine/default_actions.py`: Converted to stubs (128 lines → 60 lines simpler)
+- `django_workflow_engine/action_handlers.py`: Converted to example stubs (375 lines → 145 lines simpler)
+- `README.md`: Major rewrite of actions section
+- `tests/`: Updated all tests (331 passing)
+
+### 🎯 Benefits
+1. **No Surprises**: Actions only execute when explicitly configured
+2. **No Email Failures**: Eliminates mail server configuration errors
+3. **Clear Intent**: System behavior reflects explicit user configuration
+4. **Maximum Flexibility**: Users choose email service, templates, and logic
+5. **Cleaner Codebase**: Removed 600+ lines of email-sending code
+
 ## [1.5.4] - 2026-01-01
 
 ### 🐛 Fixed

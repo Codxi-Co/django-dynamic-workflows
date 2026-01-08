@@ -89,14 +89,18 @@ def create_default_workflow_actions(
     force: bool = False,
 ) -> List[WorkflowAction]:
     """
-    Create default email notification actions for workflow, pipeline, or stage.
+    DEPRECATED: Create placeholder action configurations (does not send emails).
 
-    Default actions created:
-    - AFTER_APPROVE: Notify creator that workflow was approved
-    - AFTER_REJECT: Notify creator that workflow was rejected
-    - AFTER_RESUBMISSION: Notify creator and current approver about resubmission
-    - AFTER_DELEGATION: Notify new approver and creator about delegation
-    - AFTER_MOVE_STAGE: Notify creator about stage progression
+    WARNING: As of v1.5.5, the package no longer sends emails. The action handlers
+    referenced by this function are stubs that log warnings.
+
+    To actually send emails, you must:
+    1. Create your own action handlers in your application
+    2. Update the function_path to point to your handlers
+    3. Or use create_custom_workflow_actions() with your own function paths
+
+    This function creates WorkflowAction records but they won't send emails unless
+    you implement your own handlers.
 
     Args:
         workflow: Workflow instance
@@ -105,14 +109,19 @@ def create_default_workflow_actions(
         force: If True, create actions even if some already exist
 
     Returns:
-        List of created WorkflowAction instances
+        List of created WorkflowAction instances (with stub handlers)
 
-    Example:
-        # Create default actions at workflow level
-        actions = create_default_workflow_actions(workflow)
+    Better Alternative:
+        # Use create_custom_workflow_actions with YOUR handlers
+        from django_workflow_engine.action_management import create_custom_workflow_actions
 
-        # Create default actions at stage level
-        actions = create_default_workflow_actions(workflow, stage=stage)
+        actions_data = [{
+            'action_type': 'after_approve',
+            'function_path': 'myapp.actions.send_approval_email',  # Your handler
+            'parameters': {'template': 'approval'},
+            'order': 1,
+        }]
+        create_custom_workflow_actions(actions_data, workflow=workflow)
     """
     created_actions = []
 
@@ -456,68 +465,9 @@ def get_effective_actions(
             )
             return []
 
-    # Priority 3: Use default actions as fallback (only if WORKFLOW_ACTIONS_CONFIG not set)
+    # No actions configured - return empty list (do not use default actions)
     logger.debug(
-        f"No DB or settings actions found for {action_type}, checking default actions"
+        f"No actions found for {action_type} - no action will be executed. "
+        "To configure actions, use WorkflowAction model or WORKFLOW_ACTIONS_CONFIG setting."
     )
-
-    # Define default actions configuration
-    default_actions_map = {
-        ActionType.AFTER_APPROVE: {
-            "function_path": "django_workflow_engine.action_handlers.send_approval_notification",
-            "parameters": {
-                "template": "workflow_approved",
-                "recipients": ["creator"],
-                "subject": "Workflow Approved",
-            },
-        },
-        ActionType.AFTER_REJECT: {
-            "function_path": "django_workflow_engine.action_handlers.send_rejection_notification",
-            "parameters": {
-                "template": "workflow_rejected",
-                "recipients": ["creator"],
-                "subject": "Workflow Rejected",
-            },
-        },
-        ActionType.AFTER_RESUBMISSION: {
-            "function_path": "django_workflow_engine.action_handlers.send_resubmission_notification",
-            "parameters": {
-                "template": "workflow_resubmission_required",
-                "recipients": ["creator", "current_approver"],
-                "subject": "Resubmission Required",
-            },
-        },
-        ActionType.AFTER_DELEGATE: {
-            "function_path": "django_workflow_engine.action_handlers.send_delegation_notification",
-            "parameters": {
-                "template": "workflow_delegated",
-                "recipients": ["delegated_to", "creator"],
-                "subject": "Workflow Delegated",
-            },
-        },
-        ActionType.AFTER_MOVE_STAGE: {
-            "function_path": "django_workflow_engine.action_handlers.send_stage_move_notification",
-            "parameters": {
-                "template": "workflow_action_required",
-                "recipients": ["creator"],
-                "subject": "Workflow Progressed to Next Stage",
-            },
-        },
-    }
-
-    if action_type in default_actions_map:
-        config = default_actions_map[action_type]
-        logger.debug(f"Using default action for {action_type}")
-        # Create a mock WorkflowAction object for the default action
-        default_action = WorkflowAction(
-            workflow=workflow,
-            action_type=action_type,
-            function_path=config["function_path"],
-            parameters=config["parameters"],
-            order=1,
-            is_active=True,
-        )
-        return [default_action]
-
-    logger.debug(f"No actions found at any priority level for {action_type}")
     return []

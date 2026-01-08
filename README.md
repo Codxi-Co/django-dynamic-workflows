@@ -7,15 +7,15 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 - **Flexible Workflow Strategies** ⭐ NEW in v1.5.0: Choose from 3 hierarchy levels (Stage/Pipeline/Workflow-only) based on complexity
 - **Generic Workflow Attachment**: Attach workflows to any Django model without hardcoded relationships
 - **Database-Stored Actions**: Configure actions dynamically in the database with inheritance system
-- **3-Tier Action Priority System**: Database → Settings → Default action resolution (no conflicts)
+- **2-Tier Action Priority System**: Database → Settings action resolution (no conflicts)
 - **Settings-Based Actions**: Configure project-wide actions via `WORKFLOW_ACTIONS_CONFIG`
-- **Action Inheritance**: Stage → Pipeline → Workflow → Default action hierarchy
+- **Action Inheritance**: Stage → Pipeline → Workflow action hierarchy
 - **Approval Flow Integration**: Built on top of django-approval-workflow package
 - **Approval Type Support**: Control approval behavior with APPROVE, SUBMIT, CHECK_IN_VERIFY, and MOVE types
 - **Complete Approval Actions**: Full support for approve, reject, delegate, and resubmission workflows
 - **Resubmission & Delegation Logic**: Proper stage transitions and user assignments with workflow event triggers
 - **Configurable Triggers**: Actions triggered on workflow events (approve, reject, delegate, etc.)
-- **Default Email Actions**: Smart email notifications to creators and approvers
+- **Opt-in Email Actions**: Configure email notifications using database actions or settings
 - **Dynamic Function Execution**: Execute Python functions by database-stored paths
 - **Workflow Cleanup & Management**: Built-in cleanup utilities to manage completed workflows and reduce database size
 - **Admin Interface**: Rich Django admin for managing workflows, stages, and actions
@@ -1632,32 +1632,79 @@ def monitor_workflow_performance():
     }
 ```
 
-## Email Notifications & Custom Actions
+## Custom Actions & Email Notifications
 
-The Django Workflow Engine provides a powerful and flexible email notification system with automatic action creation, custom email functions, and action inheritance.
+⭐ **IMPORTANT CHANGE in v1.5.5**: This package **DOES NOT send emails**. It only provides workflow orchestration and action hooks.
 
-### Features
+### Key Principles
 
-- **Automatic Default Actions**: Automatically create email notification actions for all workflow events
-- **Custom Actions via API**: Define custom actions when creating workflows, pipelines, or stages via REST API
-- **Action Inheritance**: Stage → Pipeline → Workflow hierarchy for flexible configuration
-- **Custom Email Functions**: Integrate your own email sending service (SendGrid, Mailgun, etc.)
-- **Recipient Resolution**: Smart resolution of recipients (creator, current_approver, delegated_to, etc.)
-- **Email Deduplication**: Prevent duplicate emails to the same recipient
+- **No Built-in Email Sending**: The package focuses on workflow orchestration, not email delivery
+- **User-Implemented Actions**: You must implement your own action handlers in your application
+- **Action Hooks Only**: The package triggers action events; you decide what happens
+- **Maximum Flexibility**: Use any email service (Django mail, SendGrid, Mailgun, etc.)
 
-### Configuration Settings
+### How to Implement Email Notifications
+
+1. **Create action handlers in your app:**
 
 ```python
-# settings.py
+# myapp/workflow_actions.py
+from django.core.mail import send_mail
 
-# Enable automatic creation of default email actions (default: True)
-WORKFLOW_AUTO_CREATE_ACTIONS = True
+def send_approval_email(workflow_attachment, action_parameters, **context):
+    """Your custom email handler."""
+    obj = workflow_attachment.target
 
-# Disable email sending globally (default: False)
-WORKFLOW_DISABLE_EMAILS = False
+    send_mail(
+        subject='Workflow Approved',
+        message=f'Your {obj} has been approved!',
+        from_email='noreply@example.com',
+        recipient_list=[obj.created_by.email],
+    )
+    return True
 
-# Custom email function path (optional)
-WORKFLOW_SEND_EMAIL_FUNCTION = 'myapp.utils.send_email'
+def send_rejection_email(workflow_attachment, action_parameters, **context):
+    """Your custom rejection handler."""
+    obj = workflow_attachment.target
+    reason = context.get('reason', 'No reason provided')
+
+    send_mail(
+        subject='Workflow Rejected',
+        message=f'Your {obj} was rejected. Reason: {reason}',
+        from_email='noreply@example.com',
+        recipient_list=[obj.created_by.email],
+    )
+    return True
+```
+
+2. **Configure actions to use YOUR handlers:**
+
+```python
+# Via WorkflowAction model
+from django_workflow_engine.models import WorkflowAction
+from django_workflow_engine.choices import ActionType
+
+WorkflowAction.objects.create(
+    workflow=my_workflow,
+    action_type=ActionType.AFTER_APPROVE,
+    function_path='myapp.workflow_actions.send_approval_email',
+    is_active=True,
+    order=1,
+)
+
+# Or via settings
+WORKFLOW_ACTIONS_CONFIG = [
+    {
+        'action_type': 'after_approve',
+        'function_path': 'myapp.workflow_actions.send_approval_email',
+        'order': 1,
+    },
+    {
+        'action_type': 'after_reject',
+        'function_path': 'myapp.workflow_actions.send_rejection_email',
+        'order': 1,
+    },
+]
 
 # Settings-based actions configuration (optional)
 WORKFLOW_ACTIONS_CONFIG = [
@@ -1686,46 +1733,71 @@ WORKFLOW_ACTIONS_CONFIG = [
 
 ### Action Priority System
 
-The workflow engine uses a **3-tier priority system** for action execution:
+⭐ **IMPORTANT CHANGE in v1.5.5**: Default actions are no longer automatically executed. You must explicitly configure actions using either the database or settings.
+
+The workflow engine uses a **2-tier priority system** for action execution:
 
 **Priority 1: Database Actions (Highest)**
 - Custom actions stored in the database
 - Inheritance order: Stage → Pipeline → Workflow
 - If found at any level, stops and executes only these actions
 
-**Priority 2: Settings-Based Actions (Middle)**
+**Priority 2: Settings-Based Actions (Fallback)**
 - Actions configured in `WORKFLOW_ACTIONS_CONFIG` setting
 - Allows project-wide action definitions
 - Used if no database actions found
-
-**Priority 3: Default Actions (Fallback)**
-- Built-in email notification actions
-- Only used if no database or settings actions found
+- If not explicitly configured, no actions will execute
 
 **Example Flow:**
 1. Check for stage-level database actions → Found? Execute and stop
 2. Check for pipeline-level database actions → Found? Execute and stop
 3. Check for workflow-level database actions → Found? Execute and stop
 4. Check for settings-based actions (`WORKFLOW_ACTIONS_CONFIG`) → Found? Execute and stop
-5. Use default built-in actions as final fallback
+5. If no actions configured at any level → No action executed (logs a debug message)
 
 **Benefits:**
-- **No Conflicts**: Only one priority level executes per action type
-- **Flexibility**: Override defaults with settings or database actions
+- **No Surprises**: Actions only execute when explicitly configured
+- **No Email Failures**: Avoid mail server errors when not configured
+- **Clear Intent**: Actions reflect your explicit configuration
+- **Flexibility**: Configure actions at any level (stage, pipeline, workflow, or settings)
 - **Inheritance**: Stage actions override pipeline/workflow actions
-- **Clear Logging**: Logs show action source (DB, settings, or default)
+- **Clear Logging**: Logs show action source (DB or settings) or absence of actions
 
-### Default Actions
+### Available Action Types (Hooks)
 
-When a workflow is created with `WORKFLOW_AUTO_CREATE_ACTIONS=True`, the following default actions are automatically created:
+The package triggers these action events that you can hook into:
 
-| Action Type | When Triggered | Default Recipients | Purpose |
-|-------------|----------------|-------------------|---------|
-| `AFTER_APPROVE` | After approval | Creator | Notify creator of approval |
-| `AFTER_REJECT` | After rejection | Creator | Notify creator of rejection |
-| `AFTER_RESUBMISSION` | Resubmission required | Creator, Current Approver | Notify about required changes |
-| `AFTER_DELEGATE` | Approval delegated | Delegated To, Creator | Notify about delegation |
-| `AFTER_MOVE_STAGE` | Stage progression | Creator | Notify about workflow progress |
+| Action Type | When Triggered | Context Provided |
+|-------------|----------------|------------------|
+| `AFTER_APPROVE` | After approval | workflow_attachment, user, stage |
+| `AFTER_REJECT` | After rejection | workflow_attachment, user, stage, reason |
+| `AFTER_RESUBMISSION` | Resubmission required | workflow_attachment, user, stage, comments |
+| `AFTER_DELEGATE` | Approval delegated | workflow_attachment, user, delegated_to |
+| `AFTER_MOVE_STAGE` | Stage progression | workflow_attachment, from_stage, to_stage |
+| `AFTER_MOVE_PIPELINE` | Pipeline progression | workflow_attachment, from_pipeline, to_pipeline |
+| `ON_WORKFLOW_START` | Workflow starts | workflow_attachment, initial_stage, initial_pipeline |
+| `ON_WORKFLOW_COMPLETE` | Workflow completes | workflow_attachment, user |
+
+**Example: Implementing all action handlers**
+
+```python
+# myapp/workflow_actions.py
+
+def handle_after_approve(workflow_attachment, action_parameters, **context):
+    """Called after approval."""
+    # Your logic here (email, webhook, logging, etc.)
+    pass
+
+def handle_after_reject(workflow_attachment, action_parameters, **context):
+    """Called after rejection."""
+    pass
+
+def handle_after_move_stage(workflow_attachment, action_parameters, **context):
+    """Called when stage changes."""
+    pass
+
+# ... implement other handlers as needed
+```
 
 ### Custom Actions via API
 
@@ -1805,14 +1877,16 @@ Actions follow a hierarchical inheritance model:
 1. **Stage-level actions** (highest priority): Execute if defined for the specific stage
 2. **Pipeline-level actions**: Execute if no stage actions and pipeline actions exist
 3. **Workflow-level actions**: Execute if no stage or pipeline actions exist
-4. **Default actions**: Created automatically if no custom actions at any level
+4. **Settings-based actions**: Execute if configured in `WORKFLOW_ACTIONS_CONFIG` and no database actions exist
+5. **No action**: If no actions configured at any level, no action is executed
 
 Example:
 ```python
 # If Stage 1 has custom actions → Execute Stage 1 actions only
 # If Stage 1 has NO actions but Pipeline 1 has actions → Execute Pipeline 1 actions
 # If neither Stage 1 nor Pipeline 1 have actions → Execute Workflow-level actions
-# If no actions at any level → Execute default actions (if auto-create enabled)
+# If no database actions exist → Check WORKFLOW_ACTIONS_CONFIG settings
+# If no actions at any level → No action executed (logs debug message)
 ```
 
 ### Custom Email Functions

@@ -1035,24 +1035,8 @@ def get_actions_for_event(
         ).order_by("order")
         actions.extend(workflow_actions)
 
-    # Default actions (if no workflow actions found)
-    if not actions and action_type in DEFAULT_ACTIONS:
-        # Create a virtual action for the default function
-        default_function = DEFAULT_ACTIONS[action_type]
-
-        # Check if there's already a default action configured
-        try:
-            default_action = WorkflowAction(
-                action_type=action_type,
-                function_path=f"django_workflow_engine.default_actions.{default_function}",
-                is_active=True,
-                parameters={},
-                order=0,
-            )
-            actions.append(default_action)
-        except Exception as e:
-            logger.warning(f"Error creating default action for {action_type}: {str(e)}")
-
+    # No default actions - if no actions configured, return empty list
+    logger.debug(f"Found {len(actions)} actions for {action_type}")
     return actions
 
 

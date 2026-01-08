@@ -636,13 +636,12 @@ class WorkflowActionServicesTest(TestCase):
         self.assertEqual(actions[0], stage_action)
 
     def test_get_actions_for_event_inheritance(self):
-        """Test action inheritance: Stage -> Pipeline -> Workflow -> Default."""
+        """Test action inheritance: Stage -> Pipeline -> Workflow (no automatic defaults)."""
         # No stage action, should check pipeline level
         actions = get_actions_for_event(self.attachment, ActionType.AFTER_APPROVE)
 
-        # Should create default action since no custom actions exist
-        self.assertEqual(len(actions), 1)
-        self.assertIn("default_send_email_after_approve", actions[0].function_path)
+        # Should return empty list since no actions configured
+        self.assertEqual(len(actions), 0)
 
     def test_execute_action_function_success(self):
         """Test successful action function execution."""
