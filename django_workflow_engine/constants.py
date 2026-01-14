@@ -4,6 +4,8 @@ This module contains reusable constants to avoid magic strings and values
 throughout the codebase.
 """
 
+import json
+
 from django.utils.translation import gettext_lazy as _
 
 from approval_workflow.choices import RoleSelectionStrategy
@@ -69,6 +71,10 @@ ERROR_MESSAGES = {
         "Workflow '{workflow_name}' is not active and cannot be attached. "
         "Please activate the workflow before attaching it to objects."
     ),
+    "json_field_too_large": _(
+        "JSON field '{field_name}' exceeds maximum size of {max_size} bytes "
+        "(actual size: {actual_size} bytes). This may cause database performance issues."
+    ),
 }
 
 # Logging messages
@@ -101,3 +107,57 @@ BATCH_FETCH_SIZE = 100  # Maximum number of items to fetch in batch queries
 # Cache settings
 WORKFLOW_CACHE_TIMEOUT = 300  # 5 minutes in seconds
 STAGE_CACHE_TIMEOUT = 300  # 5 minutes in seconds
+
+# JSONField size limits (in bytes)
+# MySQL TEXT limit: ~65KB, MEDIUMTEXT: ~16MB
+# PostgreSQL JSONB limit: ~1GB but practical limit is much lower
+MAX_JSON_FIELD_SIZE = 1024 * 1024  # 1MB default limit
+MAX_STAGE_INFO_SIZE = 512 * 1024  # 512KB for stage_info
+MAX_PIPELINE_INFO_SIZE = 512 * 1024  # 512KB for pipeline_info
+MAX_WORKFLOW_INFO_SIZE = 512 * 1024  # 512KB for workflow_info
+MAX_METADATA_SIZE = 256 * 1024  # 256KB for metadata
+
+
+def validate_json_size(
+    json_data, max_size: int, field_name: str, raise_error: bool = False
+) -> bool:
+    """
+    Validate JSON data size to prevent database performance issues.
+
+    Args:
+        json_data: The JSON data (dict, list, or JSON string)
+        max_size: Maximum size in bytes
+        field_name: Name of the field (for error messages)
+        raise_error: If True, raises ValidationError; if False, returns bool
+
+    Returns:
+        True if size is acceptable, False otherwise
+
+    Raises:
+        ValidationError: If size exceeds limit and raise_error=True
+    """
+    try:
+        # Convert to JSON string and calculate size
+        json_str = json.dumps(json_data, ensure_ascii=False)
+        actual_size = len(json_str.encode("utf-8"))
+
+        if actual_size > max_size:
+            error_msg = ERROR_MESSAGES["json_field_too_large"].format(
+                field_name=field_name,
+                max_size=max_size,
+                actual_size=actual_size,
+            )
+            if raise_error:
+                from django.core.exceptions import ValidationError
+
+                raise ValidationError(error_msg)
+            else:
+                logger = __import__("logging").getLogger(__name__)
+                logger.warning(error_msg)
+                return False
+
+        return True
+    except (TypeError, ValueError) as e:
+        logger = __import__("logging").getLogger(__name__)
+        logger.error(f"Error validating JSON size for {field_name}: {e}")
+        return False

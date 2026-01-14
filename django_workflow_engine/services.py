@@ -223,8 +223,13 @@ def get_workflow_progress(workflow: WorkFlow, obj: Model) -> Dict[str, Any]:
 
         content_type = ContentType.objects.get_for_model(obj)
 
-        attachment = WorkflowAttachment.objects.get(
-            content_type=content_type, object_id=str(obj.pk)
+        # Optimize query with prefetch_related to avoid N+1 queries in progress_percentage
+        attachment = (
+            WorkflowAttachment.objects.select_related(
+                "workflow", "current_stage", "current_pipeline"
+            )
+            .prefetch_related("workflow__pipelines__stages")
+            .get(content_type=content_type, object_id=str(obj.pk))
         )
 
         return attachment.get_progress_info()
@@ -953,11 +958,15 @@ def register_model_for_workflow(
     return config
 
 
-def get_workflow_attachment(obj: Model) -> Optional[WorkflowAttachment]:
+def get_workflow_attachment(
+    obj: Model, optimize_for_progress: bool = False
+) -> Optional[WorkflowAttachment]:
     """Get workflow attachment for an object.
 
     Args:
         obj: The model instance
+        optimize_for_progress: If True, prefetches related data for progress calculation.
+                             Use this when you plan to access progress_percentage property.
 
     Returns:
         WorkflowAttachment instance or None
@@ -967,9 +976,20 @@ def get_workflow_attachment(obj: Model) -> Optional[WorkflowAttachment]:
     content_type = ContentType.objects.get_for_model(obj)
 
     try:
-        return WorkflowAttachment.objects.get(
-            content_type=content_type, object_id=str(obj.pk)
-        )
+        if optimize_for_progress:
+            # Prefetch workflow, pipelines, and stages to avoid N+1 queries
+            # Use this when you plan to access progress_percentage property
+            return (
+                WorkflowAttachment.objects.select_related(
+                    "workflow", "current_stage", "current_pipeline"
+                )
+                .prefetch_related("workflow__pipelines__stages")
+                .get(content_type=content_type, object_id=str(obj.pk))
+            )
+        else:
+            return WorkflowAttachment.objects.select_related(
+                "workflow", "current_stage", "current_pipeline"
+            ).get(content_type=content_type, object_id=str(obj.pk))
     except WorkflowAttachment.DoesNotExist:
         return None
 
@@ -1045,6 +1065,72 @@ def execute_action_function(
 ) -> Any:
     """Execute an action function by its path.
 
+    This function first attempts to use the secure action registry. If the action
+    is not registered, it falls back to legacy dynamic import for backward
+    compatibility.
+
+    Args:
+        function_path: Python path to the function (e.g., 'myapp.actions.send_email')
+                       or registered action name
+        context: Context data to pass to the function
+        parameters: Additional parameters from WorkflowAction.parameters
+
+    Returns:
+        Function result or None if execution failed
+    """
+    from .action_registry import (
+        ActionExecutionError,
+        ActionNotRegisteredError,
+        registry,
+    )
+
+    # Try secure registry first
+    try:
+        # Strategy 1: Direct action name
+        if registry.is_registered(function_path):
+            logger.info(f"Executing action '{function_path}' via secure registry")
+            return registry.execute_action(
+                action_name=function_path,
+                workflow_attachment=context.get("attachment"),
+                action_parameters=parameters or {},
+                **{k: v for k, v in context.items() if k != "attachment"},
+            )
+
+        # Strategy 2: Extract action name from function path
+        action_name = function_path.split(".")[-1]
+        if registry.is_registered(action_name):
+            logger.info(
+                f"Executing action '{action_name}' via secure registry "
+                f"(resolved from {function_path})"
+            )
+            return registry.execute_action(
+                action_name=action_name,
+                workflow_attachment=context.get("attachment"),
+                action_parameters=parameters or {},
+                **{k: v for k, v in context.items() if k != "attachment"},
+            )
+
+        # Strategy 3: Fall back to legacy import (with warning)
+        logger.warning(
+            f"Action '{function_path}' not in secure registry. "
+            f"Using legacy dynamic import (not recommended)."
+        )
+        return _execute_action_function_legacy(function_path, context, parameters)
+
+    except (ActionNotRegisteredError, ActionExecutionError) as e:
+        # Registry-specific errors - try legacy as fallback
+        logger.warning(f"Registry execution failed for '{function_path}': {e}")
+        return _execute_action_function_legacy(function_path, context, parameters)
+
+
+def _execute_action_function_legacy(
+    function_path: str, context: Dict[str, Any], parameters: Dict[str, Any] = None
+) -> Any:
+    """Legacy action execution using dynamic import.
+
+    This function is maintained for backward compatibility but should not be used
+    for new implementations. Use the secure action registry instead.
+
     Args:
         function_path: Python path to the function (e.g., 'myapp.actions.send_email')
         context: Context data to pass to the function
@@ -1073,7 +1159,7 @@ def execute_action_function(
         # Execute the function
         result = function(**kwargs)
 
-        logger.info(f"Successfully executed action function: {function_path}")
+        logger.info(f"Successfully executed action function: {function_path} (legacy)")
         return result
 
     except ImportError as e:

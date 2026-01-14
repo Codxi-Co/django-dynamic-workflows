@@ -143,11 +143,13 @@ def _resolve_current_approvers(attached_object) -> Set[str]:
 
             # Handle role-based approvals (multiple users)
             if hasattr(approval, "role") and approval.role:
+                from .utils import get_users_from_role
+
                 role = approval.role
-                if hasattr(role, "users"):
-                    for user in role.users.all():
-                        if hasattr(user, "email") and user.email:
-                            emails.add(user.email)
+                users = get_users_from_role(role)
+                for user in users:
+                    if hasattr(user, "email") and user.email:
+                        emails.add(user.email)
 
     except ImportError:
         logger.error(

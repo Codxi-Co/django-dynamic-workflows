@@ -8,7 +8,7 @@ exclude = ["sandbox*", "tests*"]
 
 [project]
 name = "django-dynamic-workflows"
-version = "1.5.5"
+version = "1.6.0"
 description = "A powerful, configurable Django package for implementing dynamic multi-step workflow processes with database-stored actions"
 authors = [
     { name="Mohamed Ibrahim", email="info@codxi.com" },
@@ -17,18 +17,13 @@ license = "MIT"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "Django",
-    "django-approval-workflow",
+    "Django>=5.2",
+    "django-approval-workflow>=0.9.0",
 ]
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Web Environment",
     "Framework :: Django",
-    "Framework :: Django :: 4.0",
-    "Framework :: Django :: 4.1",
-    "Framework :: Django :: 4.2",
-    "Framework :: Django :: 5.0",
-    "Framework :: Django :: 5.1",
     "Framework :: Django :: 5.2",
     "Framework :: Django :: 6.0",
     "Intended Audience :: Developers",

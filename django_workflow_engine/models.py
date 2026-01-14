@@ -25,7 +25,14 @@ from .choices import (
     WorkflowStatus,
     WorkflowStrategy,
 )
-from .constants import ERROR_MESSAGES
+from .constants import (
+    ERROR_MESSAGES,
+    MAX_METADATA_SIZE,
+    MAX_PIPELINE_INFO_SIZE,
+    MAX_STAGE_INFO_SIZE,
+    MAX_WORKFLOW_INFO_SIZE,
+    validate_json_size,
+)
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
@@ -286,6 +293,9 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
         """Override save to auto-create default workflow actions for new workflows."""
         from django.conf import settings
 
+        # Validate JSON field sizes before saving
+        self._validate_json_fields()
+
         is_new = self.pk is None
         super().save(*args, **kwargs)
 
@@ -303,6 +313,17 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
                     f"Failed to auto-create default workflow actions for workflow {self.id}: {e}",
                     exc_info=True,
                 )
+
+    def _validate_json_fields(self):
+        """Validate JSON field sizes to prevent database bloat."""
+        # Validate workflow_info
+        if self.workflow_info:
+            validate_json_size(
+                self.workflow_info,
+                MAX_WORKFLOW_INFO_SIZE,
+                "workflow_info",
+                raise_error=True,
+            )
 
     def clone(self, modified_keys=None, overrides=None):
         logger.info(f"Starting clone process for WorkFlow: {self.id} ({self.name_en})")
@@ -470,6 +491,23 @@ class Pipeline(CompanyBaseWithNamedModelWithClone):
         # Fallback to string representation
         return str(self.department)
 
+    def save(self, *args, **kwargs):
+        """Override save to validate JSON field sizes."""
+        # Validate JSON field sizes before saving
+        self._validate_json_fields()
+        super().save(*args, **kwargs)
+
+    def _validate_json_fields(self):
+        """Validate JSON field sizes to prevent database bloat."""
+        # Validate pipeline_info
+        if self.pipeline_info:
+            validate_json_size(
+                self.pipeline_info,
+                MAX_PIPELINE_INFO_SIZE,
+                "pipeline_info",
+                raise_error=True,
+            )
+
     class Meta:
         # Remove company-based unique constraints since company is now optional
         ordering = ("order", "id")
@@ -498,6 +536,93 @@ class Stage(CompanyBaseWithNamedModelWithClone):
         default=False,
         help_text=_("Whether this stage is hidden (true for cloned stages)"),
         verbose_name=_("Is Hidden"),
+    )
+
+    # ========== ENHANCED ROLE STRATEGY FIELDS ==========
+    # From django-approval-workflow v0.8.4+
+
+    # Quorum strategy fields
+    quorum_count = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=_(
+            "Number of approvals required for QUORUM strategy (e.g., 2 out of 5)"
+        ),
+    )
+    quorum_total = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=_("Total number of users for quorum calculation"),
+    )
+    percentage_required = models.DecimalField(
+        max_digits=5,
+        decimal_places=2,
+        null=True,
+        blank=True,
+        help_text=_(
+            "Percentage required for PERCENTAGE strategy (e.g., 66.67 for 2/3)"
+        ),
+    )
+
+    # Hierarchy strategy fields
+    hierarchy_levels = models.PositiveIntegerField(
+        default=1,
+        help_text=_("Number of hierarchy levels to escalate for HIERARCHY_UP strategy"),
+    )
+    hierarchy_base_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="+",
+        help_text=_("Base user for hierarchy calculation (e.g., account_manager)"),
+    )
+
+    # ========== SLA MANAGEMENT FIELDS ==========
+    # From django-approval-workflow v0.8.4+
+
+    due_date_hours = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=_("Hours until due date (calculated from stage start)"),
+    )
+    reminder_hours_before = models.PositiveIntegerField(
+        null=True,
+        blank=True,
+        help_text=_("Send reminder X hours before due date"),
+    )
+    escalation_on_timeout = models.BooleanField(
+        default=False,
+        help_text=_("Auto-escalate to next level when timeout is reached"),
+    )
+    timeout_action = models.CharField(
+        max_length=20,
+        choices=[
+            ("escalate", _("Escalate")),
+            ("reject", _("Auto Reject")),
+            ("delegate", _("Delegate")),
+            ("auto_approve", _("Auto Approve")),
+        ],
+        default="escalate",
+        help_text=_("Action to take when timeout is reached"),
+    )
+    max_escalation_level = models.PositiveIntegerField(
+        default=3,
+        help_text=_("Maximum number of escalation levels allowed"),
+    )
+
+    # ========== PARALLEL APPROVAL FIELDS ==========
+    # From django-approval-workflow v0.8.4+
+
+    parallel_group = models.CharField(
+        max_length=100,
+        null=True,
+        blank=True,
+        help_text=_("Group ID for parallel execution with other stages"),
+    )
+    parallel_required = models.BooleanField(
+        default=False,
+        help_text=_("All stages in group must complete before next sequential stage"),
     )
 
     class Meta:
@@ -581,11 +706,34 @@ class Stage(CompanyBaseWithNamedModelWithClone):
         # Check if we should skip workflow update (for bulk operations)
         skip_workflow_update = kwargs.pop("skip_workflow_update", False)
 
+        # Validate JSON field sizes before saving
+        self._validate_json_fields()
+
         super().save(*args, **kwargs)
 
         # Update workflow active status when stage is modified (unless skipped)
         if not skip_workflow_update and self.pipeline and self.pipeline.workflow:
             self.pipeline.workflow.update_active_status()
+
+    def _validate_json_fields(self):
+        """Validate JSON field sizes to prevent database bloat."""
+        # Validate stage_info
+        if self.stage_info:
+            validate_json_size(
+                self.stage_info,
+                MAX_STAGE_INFO_SIZE,
+                "stage_info",
+                raise_error=True,
+            )
+
+        # Validate form_info
+        if self.form_info:
+            validate_json_size(
+                self.form_info,
+                MAX_STAGE_INFO_SIZE,  # Use same limit for form_info
+                "form_info",
+                raise_error=True,
+            )
 
 
 class WorkflowAttachment(models.Model):
@@ -669,6 +817,9 @@ class WorkflowAttachment(models.Model):
 
     def save(self, *args, **kwargs):
         """Override save to ensure current_pipeline is always in sync with current_stage."""
+        # Validate JSON field sizes before saving
+        self._validate_json_fields()
+
         # Ensure current_pipeline is always in sync with current_stage
         if self.current_stage and not self.current_pipeline:
             self.current_pipeline = self.current_stage.pipeline
@@ -688,9 +839,25 @@ class WorkflowAttachment(models.Model):
 
         super().save(*args, **kwargs)
 
+    def _validate_json_fields(self):
+        """Validate JSON field sizes to prevent database bloat."""
+        # Validate metadata
+        if self.metadata:
+            validate_json_size(
+                self.metadata,
+                MAX_METADATA_SIZE,
+                "metadata",
+                raise_error=True,
+            )
+
     @property
     def progress_percentage(self):
-        """Calculate workflow completion percentage."""
+        """
+        Calculate workflow completion percentage.
+
+        Note: This property benefits from prefetch_related('workflow__pipelines__stages')
+        when querying WorkflowAttachment to avoid N+1 queries.
+        """
         # Check terminal states first (completed, rejected, canceled)
         if self.status in ["completed", "rejected", "cancelled"]:
             return 100 if self.status == "completed" else 0
@@ -699,12 +866,54 @@ class WorkflowAttachment(models.Model):
         if not self.current_stage or self.status == "not_started":
             return 0
 
-        # Calculate based on the current position
+        # Calculate based on the current position and strategy
+        strategy = self.workflow.strategy
+
+        # Strategy 3 (WORKFLOW_ONLY): No stages, progress is based on approval status
+        if strategy == WorkflowStrategy.WORKFLOW_ONLY:
+            # For workflow-only strategy, calculate progress differently
+            # This is handled at the approval level, so return a default
+            return 50 if self.status == "in_progress" else 0
+
+        # Strategy 2 (WORKFLOW_PIPELINE): Progress based on pipelines, not stages
+        if strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
+            return self._calculate_pipeline_progress()
+
+        # Strategy 1 (WORKFLOW_PIPELINE_STAGE): Progress based on stages (default)
+        return self._calculate_stage_progress()
+
+    def _calculate_stage_progress(self) -> int:
+        """Calculate progress percentage for stage-based workflows."""
+        # Use cached workflow/pipelines/stages if available from prefetch_related
+        workflow = self.workflow
+
+        # Try to use prefetched data to avoid N+1 queries
+        if hasattr(workflow, "_prefetched_objects_cache"):
+            pipelines_cache = workflow._prefetched_objects_cache.get("pipelines")
+            if pipelines_cache:
+                # Use prefetched pipelines
+                pipelines = pipelines_cache
+            else:
+                # Fallback to query
+                pipelines = list(workflow.pipelines.all().order_by("order"))
+        else:
+            pipelines = list(workflow.pipelines.all().order_by("order"))
+
         total_stages = 0
         current_stage_position = 0
 
-        for pipeline in self.workflow.pipelines.all().order_by("order"):
-            for stage in pipeline.stages.all().order_by("order"):
+        for pipeline in pipelines:
+            # Try to use prefetched stages
+            if hasattr(pipeline, "_prefetched_objects_cache"):
+                stages_cache = pipeline._prefetched_objects_cache.get("stages")
+                if stages_cache:
+                    stages = stages_cache
+                else:
+                    stages = list(pipeline.stages.all().order_by("order"))
+            else:
+                stages = list(pipeline.stages.all().order_by("order"))
+
+            for stage in stages:
                 total_stages += 1
                 if stage.id == self.current_stage.id:
                     current_stage_position = total_stages
@@ -714,6 +923,37 @@ class WorkflowAttachment(models.Model):
 
         # Progress based on current stage position (stage 1 of 2 = 50%)
         return int((current_stage_position / total_stages) * 100)
+
+    def _calculate_pipeline_progress(self) -> int:
+        """Calculate progress percentage for pipeline-based workflows."""
+        workflow = self.workflow
+
+        # Try to use prefetched data
+        if hasattr(workflow, "_prefetched_objects_cache"):
+            pipelines_cache = workflow._prefetched_objects_cache.get("pipelines")
+            if pipelines_cache:
+                pipelines = pipelines_cache
+            else:
+                pipelines = list(workflow.pipelines.all().order_by("order"))
+        else:
+            pipelines = list(workflow.pipelines.all().order_by("order"))
+
+        total_pipelines = len(pipelines)
+        if total_pipelines == 0:
+            return 0
+
+        # Find current pipeline position
+        current_pipeline_position = 0
+        for i, pipeline in enumerate(pipelines, 1):
+            if self.current_pipeline and pipeline.id == self.current_pipeline.id:
+                current_pipeline_position = i
+                break
+
+        if current_pipeline_position == 0:
+            return 0
+
+        # Progress based on current pipeline position
+        return int((current_pipeline_position / total_pipelines) * 100)
 
     @property
     def next_stage(self):

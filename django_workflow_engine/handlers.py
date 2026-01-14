@@ -6,7 +6,10 @@ from typing import TYPE_CHECKING, Any, Dict, List, Optional
 if TYPE_CHECKING:
     from .models import ApprovalInstance
 
+from .enhanced_logging import StructuredLogger
+
 logger = logging.getLogger(__name__)
+structured_logger = StructuredLogger(__name__)
 
 
 class BaseApprovalHandler:
@@ -30,10 +33,11 @@ class BaseApprovalHandler:
         Args:
             instance: The approval instance about to be approved
         """
-        logger.debug(
-            "Base approval handler - before_approve called - Flow ID: %s, Step: %s",
-            instance.flow.id,
-            instance.step_number,
+        structured_logger.debug(
+            "before_approve",
+            flow_id=instance.flow.id,
+            step=instance.step_number,
+            handler=self.__class__.__name__,
         )
 
     def after_approve(self, instance: "ApprovalInstance") -> None:
@@ -120,23 +124,65 @@ class BaseApprovalHandler:
 def get_handler_for_instance(
     instance: "ApprovalInstance",
 ) -> Optional[BaseApprovalHandler]:
-    """Get the appropriate handler for an approval instance.
+    """
+    Get the appropriate handler for an approval instance.
 
-    This function allows for dynamic handler resolution based on the
-    target object type or other criteria.
+    This function supports dynamic handler resolution through multiple methods,
+    checked in order:
+
+    1. Custom discovery function (WORKFLOW_HANDLER_DISCOVERY_FUNCTION setting)
+    2. Settings-based handler list (WORKFLOW_APPROVAL_HANDLERS setting)
+    3. Auto-discovery fallback
 
     Args:
         instance: The approval instance to get a handler for
 
     Returns:
         Handler instance or None if no specific handler is found
+
+    Settings Configuration Example (Custom Discovery Function):
+        WORKFLOW_HANDLER_DISCOVERY_FUNCTION = 'myapp.handlers.get_handler_for_instance'
+
+    Settings Configuration Example (Handler List):
+        WORKFLOW_APPROVAL_HANDLERS = [
+            'myapp.handlers.DocumentApprovalHandler',
+            'myapp.handlers.TicketApprovalHandler',
+        ]
+
+    Auto-Discovery Example:
+        For a model named 'Document' in app 'myapp', this function will try
+        to import 'myapp.approval.DocumentApprovalHandler'.
     """
+    from django.conf import settings
+
+    # Method 1: Try custom handler discovery function first (NEW in v1.6.0)
+    discovery_function_path = getattr(
+        settings, "WORKFLOW_HANDLER_DISCOVERY_FUNCTION", None
+    )
+    if discovery_function_path:
+        try:
+            module_path, function_name = discovery_function_path.rsplit(".", 1)
+            module = __import__(module_path, fromlist=[function_name])
+            discovery_function = getattr(module, function_name)
+            handler = discovery_function(instance)
+            if handler:
+                logger.info(
+                    f"[WORKFLOW_ENGINE] ✅ Handler resolved via custom discovery function - "
+                    f"Flow: {instance.flow.id}, Handler: {handler.__class__.__name__}"
+                )
+                return handler
+        except (ImportError, AttributeError, ValueError) as e:
+            logger.warning(
+                f"[WORKFLOW_ENGINE] ⚠️ Failed to use custom handler discovery function - "
+                f"Path: {discovery_function_path}, Error: {e}"
+            )
+
+    # Method 2: Check for workflow attachment (generic workflow support)
     target_object = instance.flow.target
 
     if not target_object:
         return None
 
-    # Check if this object has a WorkflowAttachment (generic workflow support)
     from .services import get_workflow_attachment
 
     attachment = get_workflow_attachment(target_object)
@@ -194,7 +240,13 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
     def on_final_approve(self, approval_instance):
         """Called when the final approval for current stage is completed."""
         try:
-            logger.info(f"Final approval completed for {self.instance}")
+            structured_logger.info(
+                "stage_approved",
+                workflow_id=self.instance._meta.label,
+                object_id=self.instance.pk,
+                stage="final",
+                user_id=getattr(approval_instance, "action_user", None),
+            )
 
             # Trigger approve actions before moving to next stage
             from .choices import ActionType
@@ -214,9 +266,12 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
 
             attachment = move_to_next_stage(self.instance)
 
-            logger.info(
-                f"Workflow progressed - Object: {self.instance._meta.label}({self.instance.pk}), "
-                f"Status: {attachment.status}"
+            structured_logger.info(
+                "workflow_completed",
+                workflow_id=attachment.workflow.id,
+                object_type=self.instance._meta.label,
+                object_id=self.instance.pk,
+                status=attachment.status,
             )
 
         except Exception as e:

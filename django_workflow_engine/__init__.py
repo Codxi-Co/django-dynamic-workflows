@@ -4,7 +4,7 @@ A comprehensive Django package for implementing dynamic multi-step workflows wit
 Combines workflow management (Pipeline, Stage) with approval workflow functionality.
 """
 
-__version__ = "1.5.4"
+__version__ = "1.6.0"
 __author__ = "Mohamed Ibrahim"
 __email__ = "info@codxi.com"
 

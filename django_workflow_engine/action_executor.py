@@ -7,8 +7,72 @@ from django.conf import settings
 from django.utils.module_loading import import_string
 
 from .action_management import get_effective_actions
+from .action_registry import ActionExecutionError, ActionNotRegisteredError, registry
 
 logger = logging.getLogger(__name__)
+
+
+def _execute_action_securely(
+    function_path: str,
+    workflow_attachment,
+    action_parameters: Dict,
+    context: Dict,
+    action_source: str,
+    action_type: str,
+) -> bool:
+    """
+    Attempt to execute an action using the secure registry.
+
+    This function tries multiple strategies to execute an action securely:
+    1. Direct action name match in registry
+    2. Last component of function_path match (for legacy compatibility)
+
+    Args:
+        function_path: Function path or action name
+        workflow_attachment: WorkflowAttachment instance
+        action_parameters: Parameters for the action
+        context: Additional context
+        action_source: Source description for logging
+        action_type: Type of action for logging
+
+    Returns:
+        True if action executed successfully, False otherwise
+
+    Raises:
+        ActionNotRegisteredError: If action is not in registry
+        ActionExecutionError: If action execution fails
+    """
+    # Strategy 1: Try direct action name
+    if registry.is_registered(function_path):
+        logger.info(
+            f"Executing {action_source} - {function_path} for {action_type} (secure registry)"
+        )
+        return registry.execute_action(
+            action_name=function_path,
+            workflow_attachment=workflow_attachment,
+            action_parameters=action_parameters,
+            **context,
+        )
+
+    # Strategy 2: Try last component of function_path (legacy compatibility)
+    action_name = function_path.split(".")[-1]
+    if registry.is_registered(action_name):
+        logger.info(
+            f"Executing {action_source} - {action_name} for {action_type} "
+            f"(secure registry - resolved from {function_path})"
+        )
+        return registry.execute_action(
+            action_name=action_name,
+            workflow_attachment=workflow_attachment,
+            action_parameters=action_parameters,
+            **context,
+        )
+
+    # Not found in registry - let caller fall back to legacy import
+    raise ActionNotRegisteredError(
+        f"Action '{function_path}' not found in secure registry. "
+        f"Checked direct name and extracted action name '{action_name}'."
+    )
 
 
 def execute_workflow_actions(
@@ -104,21 +168,17 @@ def execute_workflow_actions(
             else:
                 action_source = "settings/default action"
 
-            # Import the handler function
-            handler_function = import_string(action.function_path)
-
             # Get action parameters
             action_parameters = action.parameters or {}
 
-            # Execute the handler
-            logger.info(
-                f"Executing {action_source} - {action.function_path} for {action_type}"
-            )
-
-            result = handler_function(
-                workflow_attachment=workflow_attachment,
-                action_parameters=action_parameters,
-                **context,
+            # Try to execute using secure registry first
+            result = _execute_action_securely(
+                action.function_path,
+                workflow_attachment,
+                action_parameters,
+                context,
+                action_source,
+                action_type,
             )
 
             executed += 1
@@ -130,16 +190,60 @@ def execute_workflow_actions(
                 failed += 1
                 logger.warning(f"{action_source} execution returned False")
 
-        except ImportError as e:
+        except ActionNotRegisteredError as e:
+            # This is expected for legacy function paths that aren't registered
             action_label = (
                 f"action {action.id}" if action.id else "settings/default action"
             )
-            logger.error(
-                f"Failed to import handler function '{action.function_path}' "
-                f"for {action_label}: {e}"
+            logger.warning(
+                f"Action not in registry, attempting legacy import for {action_label}: {e}"
             )
-            failed += 1
-            executed += 1
+            # Fall through to legacy import (handled below)
+            try:
+                # Legacy import path (for backward compatibility)
+                handler_function = import_string(action.function_path)
+
+                # Execute the handler
+                logger.info(
+                    f"Executing {action_source} - {action.function_path} for {action_type} (legacy)"
+                )
+
+                result = handler_function(
+                    workflow_attachment=workflow_attachment,
+                    action_parameters=action_parameters,
+                    **context,
+                )
+
+                executed += 1
+
+                if result:
+                    succeeded += 1
+                    logger.info(f"{action_source} (legacy) executed successfully")
+                else:
+                    failed += 1
+                    logger.warning(f"{action_source} (legacy) execution returned False")
+
+            except ImportError as e:
+                action_label = (
+                    f"action {action.id}" if action.id else "settings/default action"
+                )
+                logger.error(
+                    f"Failed to import handler function '{action.function_path}' "
+                    f"for {action_label}: {e}"
+                )
+                failed += 1
+                executed += 1
+
+            except Exception as e:
+                action_label = (
+                    f"action {action.id}" if action.id else "settings/default action"
+                )
+                logger.error(
+                    f"Failed to execute {action_label} ({action.function_path}): {e}",
+                    exc_info=True,
+                )
+                failed += 1
+                executed += 1
 
         except Exception as e:
             action_label = (
@@ -172,13 +276,15 @@ def execute_custom_action(
     **context,
 ) -> bool:
     """
-    Execute a single custom action by function path.
+    Execute a single custom action by function path or action name.
 
-    Useful for executing one-off actions outside of the standard action types.
+    This function first tries to use the secure action registry. If the action
+    is not registered, it falls back to legacy dynamic import for backward
+    compatibility (logged with a warning).
 
     Args:
         workflow_attachment: WorkflowAttachment instance
-        function_path: Dotted path to handler function
+        function_path: Action name (registered) or dotted path to handler function (legacy)
         parameters: Action parameters to pass to handler
         **context: Additional context
 
@@ -186,6 +292,15 @@ def execute_custom_action(
         bool: True if action executed successfully
 
     Example:
+        # Using registered action name (recommended)
+        execute_custom_action(
+            workflow_attachment=attachment,
+            function_path='send_custom_email',
+            parameters={'template': 'custom_template', 'recipients': ['admin']},
+            user=current_user
+        )
+
+        # Legacy function path (still works but not recommended)
         execute_custom_action(
             workflow_attachment=attachment,
             function_path='myapp.actions.send_custom_email',
@@ -197,29 +312,68 @@ def execute_custom_action(
         logger.error("No workflow_attachment provided to execute_custom_action")
         return False
 
+    # Try secure registry first
     try:
-        # Import the handler function
-        handler_function = import_string(function_path)
+        logger.info(f"Attempting to execute custom action: {function_path}")
 
-        # Execute the handler
-        logger.info(f"Executing custom action: {function_path}")
-
-        result = handler_function(
+        result = _execute_action_securely(
+            function_path=function_path,
             workflow_attachment=workflow_attachment,
             action_parameters=parameters or {},
-            **context,
+            context=context,
+            action_source="custom action",
+            action_type="custom",
         )
 
         if result:
-            logger.info(f"Custom action {function_path} executed successfully")
+            logger.info(
+                f"Custom action {function_path} executed successfully via registry"
+            )
             return True
         else:
             logger.warning(f"Custom action {function_path} execution returned False")
             return False
 
-    except ImportError as e:
-        logger.error(f"Failed to import handler function '{function_path}': {e}")
-        return False
+    except ActionNotRegisteredError:
+        # Fall back to legacy import for backward compatibility
+        logger.warning(
+            f"Action '{function_path}' not in secure registry. "
+            f"Falling back to legacy dynamic import (not recommended for security)."
+        )
+
+        try:
+            # Import the handler function
+            handler_function = import_string(function_path)
+
+            # Execute the handler
+            logger.info(f"Executing custom action via legacy import: {function_path}")
+
+            result = handler_function(
+                workflow_attachment=workflow_attachment,
+                action_parameters=parameters or {},
+                **context,
+            )
+
+            if result:
+                logger.info(
+                    f"Custom action {function_path} executed successfully (legacy)"
+                )
+                return True
+            else:
+                logger.warning(
+                    f"Custom action {function_path} execution returned False (legacy)"
+                )
+                return False
+
+        except ImportError as e:
+            logger.error(f"Failed to import handler function '{function_path}': {e}")
+            return False
+
+        except Exception as e:
+            logger.error(
+                f"Failed to execute custom action {function_path}: {e}", exc_info=True
+            )
+            return False
 
     except Exception as e:
         logger.error(

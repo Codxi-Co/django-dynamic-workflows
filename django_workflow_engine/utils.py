@@ -22,6 +22,96 @@ logger = logging.getLogger(__name__)
 User = get_user_model()
 
 
+def get_users_from_role(role) -> List[User]:
+    """Get users from a role using generic discovery mechanism.
+
+    This function supports multiple role model structures:
+    1. Custom discovery function (WORKFLOW_ROLE_USERS_FUNCTION)
+    2. Direct 'users' attribute (ManyToManyField)
+    3. Django Group's 'user_set' attribute
+    4. UserProfile pattern: role.userprofile_set → user
+
+    Args:
+        role: The role object (can be Group, custom Role, etc.)
+
+    Returns:
+        List of User objects
+
+    Example:
+        >>> users = get_users_from_role(role)
+        >>> len(users)
+        5
+    """
+    # Method 1: Try custom discovery function first (highest priority)
+    discovery_function_path = getattr(settings, "WORKFLOW_ROLE_USERS_FUNCTION", None)
+    if discovery_function_path:
+        try:
+            module_path, function_name = discovery_function_path.rsplit(".", 1)
+            module = __import__(module_path, fromlist=[function_name])
+            discovery_function = getattr(module, function_name)
+            users = discovery_function(role)
+            if users is not None:
+                logger.debug(
+                    f"Role users resolved via custom discovery function - "
+                    f"Role: {role}, Users: {len(users)}"
+                )
+                return list(users)
+        except (ImportError, AttributeError, ValueError, Exception) as e:
+            logger.warning(
+                f"Failed to use custom role users discovery function - "
+                f"Path: {discovery_function_path}, Error: {e}"
+            )
+
+    # Method 2: Try direct 'users' attribute (ManyToManyField)
+    if hasattr(role, "users"):
+        try:
+            return list(role.users.all())
+        except Exception as e:
+            logger.debug(f"Could not access role.users: {e}")
+
+    # Method 3: Try Django Group's 'user_set' attribute
+    if hasattr(role, "user_set"):
+        try:
+            return list(role.user_set.all())
+        except Exception as e:
+            logger.debug(f"Could not access role.user_set: {e}")
+
+    # Method 4: Try UserProfile pattern (role.userprofile_set → user)
+    if hasattr(role, "userprofile_set"):
+        try:
+            userprofiles = role.userprofile_set.all()
+            return list(up.user for up in userprofiles if hasattr(up, "user"))
+        except Exception as e:
+            logger.debug(f"Could not access role.userprofile_set: {e}")
+
+    # Method 5: Try common reverse relationship patterns
+    # This handles cases like role.profile_set where Profile has user ForeignKey
+    for attr_name in ["profile_set", "member_set", "employee_set"]:
+        if hasattr(role, attr_name):
+            try:
+                related_objects = getattr(role, attr_name).all()
+                users = []
+                for obj in related_objects:
+                    if hasattr(obj, "user"):
+                        users.append(obj.user)
+                    elif isinstance(obj, User):
+                        users.append(obj)
+                if users:
+                    logger.debug(
+                        f"Role users resolved via {attr_name} - "
+                        f"Role: {role}, Users: {len(users)}"
+                    )
+                    return users
+            except Exception as e:
+                logger.debug(f"Could not access role.{attr_name}: {e}")
+
+    logger.warning(
+        f"Could not find users for role {role}. "
+        f"Please configure WORKFLOW_ROLE_USERS_FUNCTION setting."
+    )
+    return []
+
+
 def get_user_for_approval(
     obj: Model, user: Optional[User] = None, attachment=None
 ) -> Optional[User]:
@@ -256,9 +346,59 @@ def build_approval_steps(
 
     # Build steps using cached data
     # Use start_step to continue numbering from a specific point
-    for i, approval_data in enumerate(approvals, start=start_step):
+
+    # First pass: identify role-based approvals with enhanced strategies
+    enhanced_role_approvals = []
+    standard_approvals = []
+
+    for approval_data in approvals:
+        approval_type = approval_data.get("approval_type", ApprovalTypes.SELF)
+
+        if approval_type == ApprovalTypes.ROLE and approval_data.get("user_role"):
+            # Check if this is an enhanced role strategy
+            role_selection_strategy = approval_data.get("role_selection_strategy")
+            if (
+                role_selection_strategy
+                and role_selection_strategy != RoleSelectionStrategy.ANYONE
+            ):
+                enhanced_role_approvals.append(approval_data)
+            else:
+                standard_approvals.append(approval_data)
+        else:
+            standard_approvals.append(approval_data)
+
+    # Build enhanced role strategy steps first
+    current_step = start_step
+    all_steps = []
+
+    for approval_data in enhanced_role_approvals:
+        role_id = approval_data["user_role"]
+        role = roles_map.get(role_id)
+
+        if role:
+            role_selection_strategy = approval_data.get("role_selection_strategy")
+            strategy_steps = _build_role_strategy_steps(
+                stage, role, role_selection_strategy, created_by_user, current_step
+            )
+            all_steps.extend(strategy_steps)
+            current_step += len(strategy_steps)
+        else:
+            logger.error(
+                f"Role with ID {role_id} not found, falling back to self-approval"
+            )
+            all_steps.append(
+                {
+                    "step": current_step,
+                    "assigned_to": created_by_user,
+                    "extra_fields": {"stage_id": stage.id},
+                }
+            )
+            current_step += 1
+
+    # Build standard approval steps
+    for approval_data in standard_approvals:
         step = {
-            "step": i,
+            "step": current_step,
             "extra_fields": {"stage_id": stage.id},
         }
 
@@ -278,17 +418,12 @@ def build_approval_steps(
             step["assigned_to"] = approval_user
 
         elif approval_type == ApprovalTypes.ROLE and approval_data.get("user_role"):
-            # Role-based approval
+            # Role-based approval (ANYONE strategy - standard)
             role_id = approval_data["user_role"]
             role = roles_map.get(role_id)
             if role:
                 step["assigned_role"] = role
-                role_selection_strategy = approval_data.get("role_selection_strategy")
-                step["role_selection_strategy"] = (
-                    role_selection_strategy
-                    if role_selection_strategy is not None
-                    else RoleSelectionStrategy.ANYONE
-                )
+                step["role_selection_strategy"] = RoleSelectionStrategy.ANYONE
             else:
                 logger.error(
                     f"Role with ID {role_id} not found, falling back to self-approval"
@@ -324,9 +459,470 @@ def build_approval_steps(
             # Default to APPROVE if not specified
             step["approval_type"] = ApprovalType.APPROVE
 
-        steps.append(step)
+        all_steps.append(step)
+        current_step += 1
+
+    return all_steps
+
+
+def _build_role_strategy_steps(
+    stage, role, role_selection_strategy, created_by_user: User, start_step: int
+) -> List[Dict[str, Any]]:
+    """Build approval steps for enhanced role selection strategies.
+
+    Enhanced strategies (QUORUM, MAJORITY, PERCENTAGE) create multiple parallel steps.
+    Standard strategies (CONSENSUS, ANYONE, HIERARCHY) create single steps with assigned_role.
+
+    This function routes to the appropriate strategy-specific builder based on
+    the role_selection_strategy setting:
+    - QUORUM: N out of M users must approve (creates parallel steps)
+    - MAJORITY: >50% must approve (creates parallel steps)
+    - PERCENTAGE: X% must approve (creates parallel steps)
+    - HIERARCHY_UP: Escalate N levels up (single step with assigned_role)
+    - HIERARCHY_CHAIN: Complete management chain (single step with assigned_role)
+    - CONSENSUS: All users must approve (single step with assigned_role)
+    - ANYONE: Any one user can approve (single step with assigned_role)
+
+    Args:
+        stage: The Stage instance
+        role: The Role instance
+        role_selection_strategy: The RoleSelectionStrategy enum value
+        created_by_user: The user who created the workflow item
+        start_step: The starting step number
+
+    Returns:
+        List of approval step configurations
+    """
+    from approval_workflow.choices import ApprovalType
+
+    from .enhanced_logging import workflow_logger
+
+    # Enhanced strategies that require multiple parallel steps
+    if role_selection_strategy == RoleSelectionStrategy.QUORUM:
+        steps = _build_quorum_steps(stage, role, created_by_user, start_step)
+        workflow_logger.info(
+            "activating_role_step",
+            stage_id=stage.id,
+            strategy="quorum",
+            quorum_count=stage.quorum_count,
+            quorum_total=stage.quorum_total,
+        )
+        return steps
+
+    elif role_selection_strategy == RoleSelectionStrategy.MAJORITY:
+        steps = _build_majority_steps(stage, role, created_by_user, start_step)
+        workflow_logger.info(
+            "activating_role_step",
+            stage_id=stage.id,
+            strategy="majority",
+        )
+        return steps
+
+    elif role_selection_strategy == RoleSelectionStrategy.PERCENTAGE:
+        steps = _build_percentage_steps(stage, role, created_by_user, start_step)
+        workflow_logger.info(
+            "activating_role_step",
+            stage_id=stage.id,
+            strategy="percentage",
+            percentage_required=stage.percentage_required,
+        )
+        return steps
+
+    # Standard strategies: create single step with assigned_role
+    # These are handled by the approval-workflow package's native logic
+    return [
+        {
+            "step": start_step,
+            "assigned_role": role,
+            "role_selection_strategy": role_selection_strategy,
+            "approval_type": ApprovalType.APPROVE,
+            "extra_fields": {"stage_id": stage.id},
+        }
+    ]
+
+
+def _build_quorum_steps(
+    stage, role, created_by_user: User, start_step: int
+) -> List[Dict[str, Any]]:
+    """Build approval steps for QUORUM strategy (N out of M users must approve).
+
+    Creates parallel approval instances for all role users, with quorum
+    tracking metadata to determine when the required count is reached.
+
+    Args:
+        stage: The Stage instance
+        role: The Role instance
+        created_by_user: The user who created the workflow item
+        start_step: The starting step number
+
+    Returns:
+        List of approval step configurations with quorum metadata
+    """
+    from approval_workflow.choices import ApprovalType
+
+    from .enhanced_logging import workflow_logger
+
+    # Get quorum settings from stage
+    quorum_count = stage.quorum_count or 1
+
+    # Get role users using generic discovery
+    users = get_users_from_role(role)
+    quorum_total = stage.quorum_total or len(users)
+
+    # Limit to quorum_total if specified
+    users = users[:quorum_total]
+
+    if not users:
+        logger.warning(
+            f"No users found for role {role.id} in stage {stage.id}, "
+            f"falling back to self-approval"
+        )
+        return [
+            {
+                "step": start_step,
+                "assigned_to": created_by_user,
+                "approval_type": ApprovalType.APPROVE,
+                "extra_fields": {"stage_id": stage.id},
+            }
+        ]
+
+    # Create parallel approval instances for all users
+    steps = []
+    for i, user in enumerate(users, start=start_step):
+        steps.append(
+            {
+                "step": i,
+                "assigned_to": user,
+                "approval_type": ApprovalType.APPROVE,
+                "extra_fields": {
+                    "stage_id": stage.id,
+                    "quorum_count": quorum_count,
+                    "quorum_total": quorum_total,
+                    "parallel_group": f"quorum_{stage.id}",
+                    "parallel_required": True,
+                },
+            }
+        )
+
+    workflow_logger.info(
+        "quorum_progress",
+        stage_id=stage.id,
+        required=quorum_count,
+        total=quorum_total,
+        users_count=len(users),
+    )
 
     return steps
+
+
+def _build_majority_steps(
+    stage, role, created_by_user: User, start_step: int
+) -> List[Dict[str, Any]]:
+    """Build approval steps for MAJORITY strategy (>50% must approve).
+
+    Automatically calculates required approvals as (total_users // 2) + 1.
+
+    Args:
+        stage: The Stage instance
+        role: The Role instance
+        created_by_user: The user who created the workflow item
+        start_step: The starting step number
+
+    Returns:
+        List of approval step configurations with majority metadata
+    """
+    from approval_workflow.choices import ApprovalType
+
+    from .enhanced_logging import workflow_logger
+
+    # Get role users using generic discovery
+    users = get_users_from_role(role)
+    total = len(users)
+
+    if total == 0:
+        logger.warning(
+            f"No users found for role {role.id} in stage {stage.id}, "
+            f"falling back to self-approval"
+        )
+        return [
+            {
+                "step": start_step,
+                "assigned_to": created_by_user,
+                "approval_type": ApprovalType.APPROVE,
+                "extra_fields": {"stage_id": stage.id},
+            }
+        ]
+
+    # Calculate majority: more than 50%
+    required = (total // 2) + 1
+
+    # Create parallel approval instances for all users
+    steps = []
+    for i, user in enumerate(users, start=start_step):
+        steps.append(
+            {
+                "step": i,
+                "assigned_to": user,
+                "approval_type": ApprovalType.APPROVE,
+                "extra_fields": {
+                    "stage_id": stage.id,
+                    "quorum_count": required,
+                    "quorum_total": total,
+                    "parallel_group": f"majority_{stage.id}",
+                    "parallel_required": True,
+                },
+            }
+        )
+
+    workflow_logger.info(
+        "quorum_progress",
+        stage_id=stage.id,
+        required=required,
+        total=total,
+        strategy="majority",
+    )
+
+    return steps
+
+
+def _build_percentage_steps(
+    stage, role, created_by_user: User, start_step: int
+) -> List[Dict[str, Any]]:
+    """Build approval steps for PERCENTAGE strategy (X% must approve).
+
+    Reads percentage_required from stage and calculates required approvals.
+
+    Args:
+        stage: The Stage instance
+        role: The Role instance
+        created_by_user: The user who created the workflow item
+        start_step: The starting step number
+
+    Returns:
+        List of approval step configurations with percentage metadata
+    """
+    from approval_workflow.choices import ApprovalType
+
+    from .enhanced_logging import workflow_logger
+
+    percentage_required = stage.percentage_required
+
+    if not percentage_required:
+        logger.warning(
+            f"percentage_required not set for stage {stage.id}, "
+            f"defaulting to MAJORITY strategy"
+        )
+        return _build_majority_steps(stage, role, created_by_user, start_step)
+
+    # Get role users using generic discovery
+    users = get_users_from_role(role)
+    total = len(users)
+
+    if total == 0:
+        logger.warning(
+            f"No users found for role {role.id} in stage {stage.id}, "
+            f"falling back to self-approval"
+        )
+        return [
+            {
+                "step": start_step,
+                "assigned_to": created_by_user,
+                "approval_type": ApprovalType.APPROVE,
+                "extra_fields": {"stage_id": stage.id},
+            }
+        ]
+
+    # Calculate required from percentage
+    required = int(total * float(percentage_required) / 100) + 1
+
+    # Create parallel approval instances for all users
+    steps = []
+    for i, user in enumerate(users, start=start_step):
+        steps.append(
+            {
+                "step": i,
+                "assigned_to": user,
+                "approval_type": ApprovalType.APPROVE,
+                "extra_fields": {
+                    "stage_id": stage.id,
+                    "quorum_count": required,
+                    "quorum_total": total,
+                    "parallel_group": f"percentage_{stage.id}",
+                    "parallel_required": True,
+                },
+            }
+        )
+
+    workflow_logger.info(
+        "quorum_progress",
+        stage_id=stage.id,
+        required=required,
+        total=total,
+        percentage_required=float(percentage_required),
+    )
+
+    return steps
+
+
+def _build_hierarchy_steps(
+    stage, role, role_selection_strategy, created_by_user: User, start_step: int
+) -> List[Dict[str, Any]]:
+    """Build approval steps for HIERARCHY strategies.
+
+    HIERARCHY_UP: Escalate N levels up from base user
+    HIERARCHY_CHAIN: Complete management chain
+
+    Args:
+        stage: The Stage instance
+        role: The Role instance
+        role_selection_strategy: HIERARCHY_UP or HIERARCHY_CHAIN
+        created_by_user: The user who created the workflow item
+        start_step: The starting step number
+
+    Returns:
+        List of approval step configurations for hierarchy levels
+    """
+    from approval_workflow.choices import ApprovalType
+
+    from .enhanced_logging import workflow_logger
+
+    base_user = stage.hierarchy_base_user or created_by_user
+    levels = stage.hierarchy_levels or 1
+
+    # Get users at each hierarchy level
+    steps = []
+
+    # For now, use role users ordered by some hierarchy attribute
+    # In production, this would integrate with your organization structure
+    # Get role users using generic discovery
+    role_users = get_users_from_role(role)
+
+    if not role_users:
+        logger.warning(
+            f"No users found for role {role.id} in stage {stage.id}, "
+            f"falling back to self-approval"
+        )
+        return [
+            {
+                "step": start_step,
+                "assigned_to": created_by_user,
+                "approval_type": ApprovalType.APPROVE,
+                "extra_fields": {"stage_id": stage.id},
+            }
+        ]
+
+    # Determine how many levels to use
+    if role_selection_strategy == RoleSelectionStrategy.HIERARCHY_CHAIN:
+        max_levels = len(role_users)
+    else:  # HIERARCHY_UP
+        max_levels = min(levels, len(role_users))
+
+    # Create approval instances for each hierarchy level
+    for level in range(max_levels):
+        if level < len(role_users):
+            user = role_users[level]
+            steps.append(
+                {
+                    "step": start_step + level,
+                    "assigned_to": user,
+                    "approval_type": ApprovalType.APPROVE,
+                    "extra_fields": {
+                        "stage_id": stage.id,
+                        "hierarchy_level": level + 1,
+                        "hierarchy_base_user_id": base_user.id,
+                        "hierarchy_strategy": role_selection_strategy,
+                    },
+                }
+            )
+
+            workflow_logger.info(
+                "hierarchy_escalate",
+                stage_id=stage.id,
+                level=level + 1,
+                user_id=user.id,
+            )
+
+    return steps
+
+
+def _build_consensus_steps(
+    stage, role, created_by_user: User, start_step: int
+) -> List[Dict[str, Any]]:
+    """Build approval steps for CONSENSUS strategy (all users must approve).
+
+    Creates sequential approval instances for all role users.
+
+    Args:
+        stage: The Stage instance
+        role: The Role instance
+        created_by_user: The user who created the workflow item
+        start_step: The starting step number
+
+    Returns:
+        List of sequential approval step configurations
+    """
+    from approval_workflow.choices import ApprovalType
+
+    # Get role users using generic discovery
+    users = get_users_from_role(role)
+
+    if not users:
+        logger.warning(
+            f"No users found for role {role.id} in stage {stage.id}, "
+            f"falling back to self-approval"
+        )
+        return [
+            {
+                "step": start_step,
+                "assigned_to": created_by_user,
+                "approval_type": ApprovalType.APPROVE,
+                "extra_fields": {"stage_id": stage.id},
+            }
+        ]
+
+    # Create sequential approval instances
+    steps = []
+    for i, user in enumerate(users, start=start_step):
+        steps.append(
+            {
+                "step": i,
+                "assigned_to": user,
+                "approval_type": ApprovalType.APPROVE,
+                "extra_fields": {"stage_id": stage.id},
+            }
+        )
+
+    return steps
+
+
+def _build_anyone_steps(
+    stage, role, created_by_user: User, start_step: int
+) -> List[Dict[str, Any]]:
+    """Build approval steps for ANYONE strategy (any one user can approve).
+
+    Creates a single approval instance that can be handled by any user in the role.
+
+    Args:
+        stage: The Stage instance
+        role: The Role instance
+        created_by_user: The user who created the workflow item
+        start_step: The starting step number
+
+    Returns:
+        List with single approval step configuration for role
+    """
+    from approval_workflow.choices import ApprovalType
+
+    # Single approval step assigned to role (not specific user)
+    return [
+        {
+            "step": start_step,
+            "assigned_role": role,
+            "role_selection_strategy": RoleSelectionStrategy.ANYONE,
+            "approval_type": ApprovalType.APPROVE,
+            "extra_fields": {"stage_id": stage.id},
+        }
+    ]
 
 
 def get_next_workflow_stage(current_stage) -> Optional:
@@ -646,3 +1242,25 @@ def enrich_answers(
         enriched.append({**spec, "answer": answer})
 
     return enriched
+
+
+def get_workflow_location_string(workflow_attachment) -> str:
+    """
+    Get a human-readable location string for a workflow attachment.
+
+    This is a convenience wrapper around the strategy handler's get_workflow_location.
+
+    Args:
+        workflow_attachment: WorkflowAttachment instance
+
+    Returns:
+        Human-readable location string (e.g., "Stage 'Review' in pipeline 'Finance'")
+
+    Example:
+        >>> location = get_workflow_location_string(attachment)
+        >>> print(f"Current location: {location}")
+        Current location: Stage 'Budget Approval' in pipeline 'Finance'
+    """
+    from .strategy_handlers import get_workflow_location
+
+    return get_workflow_location(workflow_attachment)
