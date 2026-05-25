@@ -5,6 +5,7 @@ from typing import Dict, List, Optional
 
 from .choices import ActionType
 from .models import Pipeline, Stage, WorkFlow, WorkflowAction
+from .settings import get_actions_config_for_model
 
 logger = logging.getLogger(__name__)
 
@@ -345,13 +346,14 @@ def get_effective_actions(
     workflow: WorkFlow,
     pipeline: Optional[Pipeline] = None,
     stage: Optional[Stage] = None,
+    model_string: Optional[str] = None,
 ) -> List[WorkflowAction]:
     """
     Get effective actions for a given event using priority system.
 
     Priority order:
     1. Database actions (custom): Stage -> Pipeline -> Workflow
-    2. Settings-based actions: WORKFLOW_ACTIONS_CONFIG
+    2. Settings-based actions: WORKFLOW_ACTIONS_CONFIG (model-keyed with 'default' fallback)
     3. Default actions: Built-in email notifications
 
     Args:
@@ -359,6 +361,10 @@ def get_effective_actions(
         workflow: Workflow instance
         pipeline: Optional pipeline instance
         stage: Optional stage instance
+        model_string: Optional model string (e.g. 'crm.Opportunity') for
+            resolving model-specific action configs. When provided, the
+            WORKFLOW_ACTIONS_CONFIG dict is looked up by this key with
+            'default' fallback.
 
     Returns:
         List of WorkflowAction instances to execute
@@ -367,7 +373,8 @@ def get_effective_actions(
         actions = get_effective_actions(
             ActionType.AFTER_APPROVE,
             workflow=my_workflow,
-            stage=current_stage
+            stage=current_stage,
+            model_string='crm.Opportunity',
         )
     """
     from django.conf import settings
@@ -416,14 +423,17 @@ def get_effective_actions(
         return list(workflow_actions)
 
     # Priority 2: Check settings for configured actions
-    settings_actions_config = getattr(settings, "WORKFLOW_ACTIONS_CONFIG", None)
+    # Use model-keyed resolution with 'default' fallback when model_string is provided
+    if model_string:
+        settings_actions_config = get_actions_config_for_model(model_string)
+    else:
+        settings_actions_config = getattr(settings, "WORKFLOW_ACTIONS_CONFIG", None)
 
-    # Check if WORKFLOW_ACTIONS_CONFIG is explicitly set (even if empty)
-    # - None/not set → use defaults (Priority 3)
+    # Check if resolved config is explicitly set (even if empty)
+    # - None/not set → no actions
     # - [] (empty list) → disable all actions (return empty)
     # - [...] (has items) → use only configured actions
     if settings_actions_config is not None:
-        # WORKFLOW_ACTIONS_CONFIG is explicitly configured
         # Empty list means "disable all actions"
         if not settings_actions_config:
             logger.debug(
@@ -457,7 +467,7 @@ def get_effective_actions(
                 settings_actions.append(action)
             return settings_actions
         else:
-            # WORKFLOW_ACTIONS_CONFIG has actions but action_type not included
+            # Config has actions but action_type not included
             # This means user explicitly doesn't want any action for this type
             logger.debug(
                 f"WORKFLOW_ACTIONS_CONFIG is set but {action_type} not configured - "

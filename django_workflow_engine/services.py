@@ -30,10 +30,12 @@ from .models import (
     WorkflowConfiguration,
 )
 from .settings import (
+    get_auto_start_config_for_model,
     get_auto_start_workflows,
     get_default_workflow_status_field,
     get_department_model_mapping,
     get_workflow_model_mappings,
+    get_workflows_for_model_string,
 )
 from .settings import is_model_workflow_enabled as is_model_enabled_in_settings
 
@@ -1290,11 +1292,11 @@ def get_workflows_for_model(model_class: Type[Model]) -> List[WorkFlow]:
         return []
 
     model_string = f"{model_class._meta.app_label}.{model_class.__name__}"
-    mappings = get_workflow_model_mappings()
 
-    # If specific mappings exist, filter by them
-    if model_string in mappings:
-        workflow_names = mappings[model_string]
+    # Use helper that resolves model_string -> "default" fallback
+    workflow_names = get_workflows_for_model_string(model_string)
+
+    if workflow_names is not None:
         workflows = WorkFlow.objects.filter(
             name_en__in=workflow_names, is_active=True
         ).order_by("name_en")
@@ -1308,7 +1310,7 @@ def get_workflows_for_model(model_class: Type[Model]) -> List[WorkFlow]:
 
         return list(workflows)
 
-    # If no specific mappings, return all active workflows
+    # If no mappings at all, return all active workflows
     # (This maintains backward compatibility)
     workflows = WorkFlow.objects.filter(is_active=True).order_by("name_en")
 
@@ -1361,12 +1363,12 @@ def get_auto_start_workflow_for_object(obj: Model) -> Optional[WorkFlow]:
         return None
 
     model_string = f"{obj._meta.app_label}.{obj.__class__.__name__}"
-    auto_start_config = get_auto_start_workflows()
 
-    if model_string not in auto_start_config:
+    # Use helper that resolves model_string -> "default" fallback
+    config = get_auto_start_config_for_model(model_string)
+
+    if config is None:
         return None
-
-    config = auto_start_config[model_string]
     workflow_name = config.get("workflow_name")
     conditions = config.get("conditions", {})
 

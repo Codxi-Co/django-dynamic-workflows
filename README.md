@@ -48,17 +48,24 @@ DJANGO_WORKFLOW_ENGINE = {
     'DEFAULT_STATUS_FIELD': 'workflow_status',
 
     # Workflow Mappings
+    # Use "default" as a fallback for models without a specific entry
     'MODEL_WORKFLOW_MAPPINGS': {
         'myapp.PurchaseRequest': ['purchase_approval', 'emergency_approval'],
         'crm.Opportunity': ['sales_process'],
+        'default': ['standard_approval'],  # Fallback for all other models
     },
 
     # Auto-start Configuration
+    # Use "default" as a fallback for models without a specific entry
     'AUTO_START_WORKFLOWS': {
         'myapp.PurchaseRequest': {
             'workflow_slug': 'purchase_approval',
             'conditions': {'amount__gte': 1000}  # Only for amounts >= 1000
-        }
+        },
+        'default': {
+            'workflow_slug': 'standard_approval',
+            # No conditions — auto-start for all models using the default
+        },
     },
 
     # Permissions
@@ -68,6 +75,138 @@ DJANGO_WORKFLOW_ENGINE = {
     }
 }
 ```
+
+### Per-Model Configuration with Default Fallback
+
+Several settings support a `"default"` key that acts as a fallback when a model does not have its own specific entry. This keeps configuration DRY when many models share the same workflow slugs, auto-start behaviour, or action handlers.
+
+#### Resolution Order
+
+For every setting that supports `"default"`, the engine resolves values in this order:
+
+1. **Exact model match** — look for the model's `app_label.ModelName` key (e.g. `"crm.Opportunity"`).
+2. **`"default"` key** — if no exact match exists, fall back to the `"default"` entry.
+3. **Existing behaviour** — if neither is present, the original logic applies (return all active workflows, no auto-start, or no actions).
+
+#### Where `"default"` Is Supported
+
+| Setting | Scope | Fallback Behaviour |
+|---------|-------|--------------------|
+| `MODEL_WORKFLOW_MAPPINGS` | Inside `DJANGO_WORKFLOW_ENGINE` | Returns default workflow slugs instead of all active workflows |
+| `AUTO_START_WORKFLOWS` | Inside `DJANGO_WORKFLOW_ENGINE` | Returns default auto-start config instead of no auto-start |
+| `WORKFLOW_ACTIONS_CONFIG` | **Top-level** Django setting (not inside `DJANGO_WORKFLOW_ENGINE`) | Returns default action list instead of `None` |
+
+#### Complete Multi-Module Example
+
+Below is a practical settings excerpt that configures three separate modules — CRM, HR, and Support — each with their own workflow mappings, auto-start rules, and action handlers, while sharing a sensible default for any future models.
+
+```python
+# settings.py
+
+DJANGO_WORKFLOW_ENGINE = {
+    'ENABLED_MODELS': [
+        'crm.Opportunity',
+        'hr.LeaveRequest',
+        'support.Ticket',
+        'myapp.ExpenseClaim',
+    ],
+    'DEFAULT_STATUS_FIELD': 'workflow_status',
+
+    # --- Workflow Mappings ---
+    'MODEL_WORKFLOW_MAPPINGS': {
+        'crm.Opportunity': ['sales_process'],
+        'hr.LeaveRequest': ['leave_approval', 'emergency_leave'],
+        'support.Ticket': ['ticket_escalation'],
+        # Any model not listed above will use these workflows:
+        'default': ['standard_approval'],
+    },
+
+    # --- Auto-start ---
+    'AUTO_START_WORKFLOWS': {
+        'hr.LeaveRequest': {
+            'workflow_slug': 'leave_approval',
+            'conditions': {'duration__gte': 3},
+        },
+        'support.Ticket': {
+            'workflow_slug': 'ticket_escalation',
+        },
+        # Other models auto-start the standard_approval workflow unconditionally:
+        'default': {
+            'workflow_slug': 'standard_approval',
+        },
+    },
+
+    'PERMISSIONS': {
+        'REQUIRE_PERMISSION_TO_START': True,
+        'REQUIRE_PERMISSION_TO_APPROVE': True,
+    },
+}
+
+# WORKFLOW_ACTIONS_CONFIG is a separate top-level setting.
+# It supports both a flat list (backward compatible) and a dict keyed by model string.
+
+WORKFLOW_ACTIONS_CONFIG = {
+    # Default actions apply to every model that has no specific entry
+    'default': [
+        {
+            'action_type': 'after_approve',
+            'function_path': 'core.actions.log_approval',
+            'order': 1,
+        },
+        {
+            'action_type': 'after_reject',
+            'function_path': 'core.actions.notify_rejection',
+            'order': 1,
+        },
+    ],
+
+    # CRM-specific actions
+    'crm.Opportunity': [
+        {
+            'action_type': 'after_approve',
+            'function_path': 'crm.actions.opportunity_approved',
+            'order': 1,
+            'parameters': {'notify_sales_manager': True},
+        },
+        {
+            'action_type': 'on_workflow_start',
+            'function_path': 'crm.actions.opportunity_workflow_started',
+            'order': 1,
+        },
+    ],
+
+    # HR-specific actions
+    'hr.LeaveRequest': [
+        {
+            'action_type': 'after_approve',
+            'function_path': 'hr.actions.leave_approved',
+            'order': 1,
+        },
+        {
+            'action_type': 'after_reject',
+            'function_path': 'hr.actions.notify_employee_rejection',
+            'order': 1,
+        },
+    ],
+
+    # Support-specific actions
+    'support.Ticket': [
+        {
+            'action_type': 'on_workflow_start',
+            'function_path': 'support.actions.alert_support_team',
+            'order': 1,
+        },
+    ],
+}
+```
+
+With this setup:
+
+- `crm.Opportunity` uses the `sales_process` workflow, auto-starts are not configured (no exact match, and you can omit `"default"` in `AUTO_START_WORKFLOWS` if you do not want auto-start for CRM), and its approve/reject actions call CRM-specific handlers.
+- `hr.LeaveRequest` uses the `leave_approval` workflow, auto-starts when `duration >= 3`, and runs HR-specific action handlers.
+- `support.Ticket` uses the `ticket_escalation` workflow, auto-starts unconditionally, and alerts the support team when the workflow begins.
+- `myapp.ExpenseClaim` (and any future model) falls through to `"default"` — it gets the `standard_approval` workflow, auto-starts that workflow, and runs the generic approval/rejection actions.
+
 ### Company Model Architecture
 
 **Important**: The `company` field in workflow models uses Django's `AUTH_USER_MODEL` (User model) for maximum flexibility:
@@ -1692,7 +1831,8 @@ WorkflowAction.objects.create(
     order=1,
 )
 
-# Or via settings
+# Or via settings — Format 1: Flat list (backward compatible)
+# All models share the same actions.
 WORKFLOW_ACTIONS_CONFIG = [
     {
         'action_type': 'after_approve',
@@ -1706,29 +1846,51 @@ WORKFLOW_ACTIONS_CONFIG = [
     },
 ]
 
-# Settings-based actions configuration (optional)
-WORKFLOW_ACTIONS_CONFIG = [
-    # Notifications (Order 1 - run first)
-    {
-        "action_type": "after_approve",
-        "function_path": "crm.notifications.send_opportunity_approved_notification",
-        "order": 1,
-        "parameters": {"recipients": ["creator", "next_approvers"]},
-    },
-    {
-        "action_type": "on_workflow_start",
-        "function_path": "crm.notifications.opportunity_workflow_started",
-        "order": 1,
-        "parameters": {"recipients": ["current_approvers"]},
-    },
-    # Status Updates (Order 2 - run after notifications)
-    {
-        "action_type": "after_approve",
-        "function_path": "crm.notifications.update_opportunity_status",
-        "order": 2,
-        "parameters": {"status": "IN_PROGRESS"},
-    },
-]
+# Or via settings — Format 2: Dict keyed by model string with "default" fallback
+# Each model can have its own action handlers; unmatched models fall through to "default".
+WORKFLOW_ACTIONS_CONFIG = {
+    # Fallback actions for any model without a specific entry
+    "default": [
+        {
+            "action_type": "after_approve",
+            "function_path": "myapp.workflow_actions.send_approval_email",
+            "order": 1,
+        },
+        {
+            "action_type": "after_reject",
+            "function_path": "myapp.workflow_actions.send_rejection_email",
+            "order": 1,
+        },
+    ],
+    # CRM-specific actions (overrides "default" for crm.Opportunity)
+    "crm.Opportunity": [
+        # Notifications (Order 1 - run first)
+        {
+            "action_type": "after_approve",
+            "function_path": "crm.notifications.send_opportunity_approved_notification",
+            "order": 1,
+            "parameters": {"recipients": ["creator", "next_approvers"]},
+        },
+        {
+            "action_type": "on_workflow_start",
+            "function_path": "crm.notifications.opportunity_workflow_started",
+            "order": 1,
+            "parameters": {"recipients": ["current_approvers"]},
+        },
+        # Status Updates (Order 2 - run after notifications)
+        {
+            "action_type": "after_approve",
+            "function_path": "crm.notifications.update_opportunity_status",
+            "order": 2,
+            "parameters": {"status": "IN_PROGRESS"},
+        },
+    ],
+}
+
+# Resolution order for WORKFLOW_ACTIONS_CONFIG (dict format):
+#   1. Exact model match  (e.g. "crm.Opportunity")
+#   2. "default" key
+#   3. None — no actions executed
 ```
 
 ### Action Priority System

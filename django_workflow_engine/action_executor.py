@@ -125,12 +125,19 @@ def execute_workflow_actions(
     pipeline = workflow_attachment.current_pipeline
     stage = context.get("stage") or workflow_attachment.current_stage
 
+    # Resolve model string from attachment's content type
+    model_string = None
+    if workflow_attachment.content_type:
+        ct = workflow_attachment.content_type
+        model_string = f"{ct.app_label}.{ct.model_class().__name__}"
+
     # Get effective actions using inheritance
     actions = get_effective_actions(
         action_type=action_type,
         workflow=workflow,
         pipeline=pipeline,
         stage=stage,
+        model_string=model_string,
     )
 
     if not actions:

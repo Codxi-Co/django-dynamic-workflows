@@ -5,7 +5,38 @@ All notable changes to django-dynamic-workflows will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.5.5] - 2026-01-08
+## [1.7.0] - 2026-05-26
+
+### Added
+
+- `"default"` key fallback in `MODEL_WORKFLOW_MAPPINGS` for models without a specific mapping
+- `"default"` key fallback in `AUTO_START_WORKFLOWS` for models without a specific auto-start config
+- `get_workflows_for_model_string()` and `get_auto_start_config_for_model()` settings helpers with default resolution
+- Dict format support for `WORKFLOW_ACTIONS_CONFIG` keyed by model string (e.g. `"crm.Opportunity"`) with `"default"` fallback, alongside existing flat list format
+- `get_actions_config_for_model()` and `get_workflow_actions_config()` settings helpers
+- `model_string` parameter to `get_effective_actions()` for model-specific action resolution
+- Model string auto-resolution from `WorkflowAttachment.content_type` in `action_executor.py`
+- Settings validation for `"default"` key in `MODEL_WORKFLOW_MAPPINGS` and `AUTO_START_WORKFLOWS`
+- 35 new tests covering all default-key and model-keyed config resolution paths
+- README documentation for per-model configuration with `"default"` fallback
+
+### Changed
+
+- `get_workflows_for_model()` now uses `get_workflows_for_model_string()` with default fallback
+- `get_auto_start_workflow_for_object()` now uses `get_auto_start_config_for_model()` with default fallback
+
+### Backward Compatibility
+
+- 100% backward compatible. Flat list `WORKFLOW_ACTIONS_CONFIG` still works as-is.
+- All 360 existing tests pass unchanged. Total: 395 tests passing.
+
+## [1.6.1] - 2026-01-15
+
+### Fixed
+
+- Fix duplicate migration operations in 0002 migration
+
+## [1.6.0] - 2026-01-14
 
 ### 🚨 BREAKING CHANGES
 
