@@ -16,6 +16,7 @@ router.register(r"workflows", WorkFlowViewSet, basename="workflow")
 app_name = "django_workflow_engine"
 
 urlpatterns = [
+    path("status/", include("django_workflow_engine.status_urls")),
     path("", include(router.urls)),
 ]
 

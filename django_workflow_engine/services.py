@@ -8,26 +8,38 @@ import logging
 from typing import Any, Dict, List, Optional, Type
 
 from django.contrib.auth import get_user_model
+from django.db import transaction
 from django.db.models import Model
 from django.utils import timezone
+from django.utils.module_loading import import_string
 
 from approval_workflow.choices import RoleSelectionStrategy
 from approval_workflow.models import ApprovalFlow
 
 from .choices import (
     DEFAULT_ACTIONS,
+    ActionFailurePolicy,
     ActionType,
     ApprovalTypes,
+    TransitionRejectBehavior,
     WorkflowAttachmentStatus,
+    WorkflowStrategy,
 )
 from .constants import ERROR_MESSAGES, LOG_MESSAGES
 from .models import (
+    ModelStatus,
+    ModelStatusConfiguration,
     Pipeline,
     Stage,
+    Status,
+    StatusAttachment,
+    StatusHistory,
+    StatusTransition,
     WorkFlow,
     WorkflowAction,
     WorkflowAttachment,
     WorkflowConfiguration,
+    WorkflowStatusNode,
 )
 from .settings import (
     get_auto_start_config_for_model,
@@ -38,6 +50,7 @@ from .settings import (
     get_workflows_for_model_string,
 )
 from .settings import is_model_workflow_enabled as is_model_enabled_in_settings
+from .status_permissions import can_user_perform_transition
 
 logger = logging.getLogger(__name__)
 
@@ -56,13 +69,13 @@ def set_pipeline_department(pipeline: Pipeline, department_id: int):
         # No department model configured, skip
         return
 
+    from django.contrib.contenttypes.models import ContentType
+
     try:
         # Parse model string
         app_label, model_name = department_model_string.split(".")
 
         # Get the content type
-        from django.contrib.contenttypes.models import ContentType
-
         # ContentType.model is always lowercase
         content_type = ContentType.objects.get(
             app_label=app_label, model=model_name.lower()
@@ -247,6 +260,258 @@ def get_workflow_progress(workflow: WorkFlow, obj: Model) -> Dict[str, Any]:
         }
 
 
+# Status management services
+
+
+def register_model_for_statuses(
+    model_class: Type[Model],
+    statuses: Optional[List[Status]] = None,
+    default_status: Status = None,
+    status_field: str = "",
+    allow_direct_change: bool = True,
+    default_workflow: WorkFlow = None,
+    auto_start_workflow: bool = False,
+) -> ModelStatusConfiguration:
+    """Register a model to use business statuses, optionally with a default workflow."""
+    from django.contrib.contenttypes.models import ContentType
+
+    content_type = ContentType.objects.get_for_model(model_class)
+    config, _ = ModelStatusConfiguration.objects.get_or_create(
+        content_type=content_type,
+        defaults={
+            "default_status": default_status,
+            "status_field": status_field or "",
+            "allow_direct_change": allow_direct_change,
+        },
+    )
+
+    config.default_status = default_status or config.default_status
+    config.status_field = status_field or config.status_field
+    config.allow_direct_change = allow_direct_change
+    config.is_enabled = True
+    config.save()
+
+    if statuses:
+        for index, status in enumerate(statuses):
+            ModelStatus.objects.get_or_create(
+                configuration=config,
+                status=status,
+                defaults={
+                    "order": index,
+                    "is_initial": status == default_status,
+                },
+            )
+
+    if default_workflow:
+        register_model_for_workflow(
+            model_class,
+            auto_start=auto_start_workflow,
+            default_workflow=default_workflow,
+            status_field=status_field,
+        )
+
+    return config
+
+
+def get_available_statuses(model_class: Type[Model]) -> List[Status]:
+    """Return statuses configured for a model type."""
+    from django.contrib.contenttypes.models import ContentType
+
+    content_type = ContentType.objects.get_for_model(model_class)
+    try:
+        config = ModelStatusConfiguration.objects.get(
+            content_type=content_type, is_enabled=True
+        )
+    except ModelStatusConfiguration.DoesNotExist:
+        return []
+
+    return [
+        model_status.status
+        for model_status in config.model_statuses.select_related("status").filter(
+            is_active=True, status__is_active=True
+        )
+    ]
+
+
+def get_status_attachment(obj: Model) -> Optional[StatusAttachment]:
+    """Get the generic status attachment for an object."""
+    from django.contrib.contenttypes.models import ContentType
+
+    content_type = ContentType.objects.get_for_model(obj)
+    try:
+        return StatusAttachment.objects.select_related("status").get(
+            content_type=content_type, object_id=str(obj.pk)
+        )
+    except StatusAttachment.DoesNotExist:
+        return None
+
+
+def get_current_status(obj: Model) -> Optional[Status]:
+    """Return the current business status for any object."""
+    attachment = get_status_attachment(obj)
+    return attachment.status if attachment else None
+
+
+def _get_model_status_config(obj: Model) -> Optional[ModelStatusConfiguration]:
+    from django.contrib.contenttypes.models import ContentType
+
+    content_type = ContentType.objects.get_for_model(obj)
+    try:
+        return ModelStatusConfiguration.objects.get(
+            content_type=content_type, is_enabled=True
+        )
+    except ModelStatusConfiguration.DoesNotExist:
+        return None
+
+
+def _validate_status_allowed_for_object(
+    obj: Model,
+    status: Status,
+    config: Optional[ModelStatusConfiguration],
+    company=None,
+) -> None:
+    if not status.is_active:
+        raise ValueError(f"Status '{status}' is inactive")
+
+    if not config:
+        return
+
+    company_id = getattr(company, "pk", company)
+    if company_id and status.company_id and status.company_id != company_id:
+        raise ValueError(
+            f"Status '{status}' does not belong to the object's workflow company"
+        )
+
+    exists = ModelStatus.objects.filter(
+        configuration=config,
+        status=status,
+        is_active=True,
+    ).exists()
+    if not exists:
+        raise ValueError(f"Status '{status}' is not allowed for {obj._meta.label}")
+
+
+def _sync_object_status_field(
+    obj: Model, status: Status, config: Optional[ModelStatusConfiguration]
+) -> None:
+    if not config or not config.status_field:
+        return
+
+    if not hasattr(obj, config.status_field):
+        logger.warning(
+            "Model %s does not have configured status field '%s'",
+            obj._meta.label,
+            config.status_field,
+        )
+        return
+
+    field = obj._meta.get_field(config.status_field)
+    if getattr(field, "remote_field", None) and field.remote_field:
+        value = status
+    else:
+        value = status.key
+
+    setattr(obj, config.status_field, value)
+    obj.save(update_fields=[config.status_field])
+
+
+def set_status(
+    obj: Model,
+    status: Status,
+    user: User = None,
+    reason: str = "",
+    metadata: Dict[str, Any] = None,
+    workflow: WorkFlow = None,
+    transition: StatusTransition = None,
+    enforce_workflow: bool = True,
+    execute_entry_actions: bool = True,
+) -> StatusAttachment:
+    """Set business status for any object, independent from workflow."""
+    from django.contrib.contenttypes.models import ContentType
+
+    content_type = ContentType.objects.get_for_model(obj)
+    config = _get_model_status_config(obj)
+
+    if (
+        config
+        and not config.allow_direct_change
+        and enforce_workflow
+        and not transition
+    ):
+        raise ValueError(f"Direct status changes are disabled for {obj._meta.label}")
+
+    workflow_attachment = get_workflow_attachment(obj)
+    if (
+        enforce_workflow
+        and workflow_attachment
+        and workflow_attachment.workflow.strategy == WorkflowStrategy.STATUS_GRAPH
+        and not transition
+    ):
+        raise ValueError("Status changes for this object must use workflow transitions")
+
+    active_workflow = workflow or (
+        workflow_attachment.workflow if workflow_attachment else None
+    )
+    _validate_status_allowed_for_object(
+        obj,
+        status,
+        config,
+        company=active_workflow.company if active_workflow else None,
+    )
+
+    status_attachment, created = StatusAttachment.objects.get_or_create(
+        content_type=content_type,
+        object_id=str(obj.pk),
+        defaults={
+            "status": status,
+            "changed_by": user,
+            "metadata": metadata or {},
+        },
+    )
+    old_status = status_attachment.status
+
+    status_attachment.status = status
+    status_attachment.changed_by = user
+    if metadata:
+        status_attachment.metadata.update(metadata)
+    status_attachment.save()
+
+    StatusHistory.objects.create(
+        content_type=content_type,
+        object_id=str(obj.pk),
+        from_status=None if created else old_status,
+        to_status=status,
+        workflow=workflow,
+        transition=transition,
+        changed_by=user,
+        reason=reason or "",
+        metadata=metadata or {},
+    )
+
+    _sync_object_status_field(obj, status, config)
+
+    if workflow_attachment:
+        workflow_attachment.current_status = status
+        workflow_attachment.save(update_fields=["current_status", "modified_at"])
+
+    if (
+        execute_entry_actions
+        and workflow_attachment
+        and active_workflow
+        and (created or old_status.id != status.id or transition is not None)
+    ):
+        _run_status_entry_actions(
+            workflow_attachment,
+            status,
+            user=user,
+            previous_status=None if created else old_status,
+            transition=transition,
+            metadata=metadata or {},
+        )
+
+    return status_attachment
+
+
 # Workflow Attachment Services
 
 
@@ -423,6 +688,16 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
         # first_pipeline and first_stage remain None - this is expected for Strategy 3
         pass
 
+    elif strategy == WorkflowStrategy.STATUS_GRAPH:
+        initial_node = attachment.workflow.status_nodes.filter(
+            is_initial=True, is_active=True
+        ).first()
+        if not initial_node:
+            raise ValueError(
+                f"Workflow '{attachment.workflow.name_en}' has no initial status"
+            )
+        attachment.current_status = initial_node.status
+
     # Update attachment
     attachment.status = WorkflowAttachmentStatus.IN_PROGRESS
     attachment.current_stage = first_stage  # Will be None for strategies 2 and 3
@@ -476,6 +751,18 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
         )
 
         location = f"workflow '{attachment.workflow.name_en}'"
+    elif strategy == WorkflowStrategy.STATUS_GRAPH:
+        steps = []
+        location = f"status '{attachment.current_status.name_en}'"
+
+        set_status(
+            obj=obj,
+            status=attachment.current_status,
+            user=user,
+            workflow=attachment.workflow,
+            enforce_workflow=False,
+            reason="Workflow started",
+        )
 
     if steps:
         logger.info(
@@ -1015,6 +1302,515 @@ def is_model_workflow_enabled(model_class: Type[Model]) -> bool:
         return False
 
 
+# Status transition services
+
+
+def get_available_transitions(obj: Model, user: User = None) -> List[StatusTransition]:
+    """Return active transitions available from the object's current status."""
+    attachment = get_workflow_attachment(obj)
+    if not attachment or attachment.workflow.strategy != WorkflowStrategy.STATUS_GRAPH:
+        return []
+
+    current_status = attachment.current_status or get_current_status(obj)
+    if not current_status:
+        return []
+
+    transitions = (
+        StatusTransition.objects.select_related(
+            "from_status__status", "to_status__status", "workflow"
+        )
+        .filter(
+            workflow=attachment.workflow,
+            from_status__status=current_status,
+            from_status__is_active=True,
+            is_active=True,
+        )
+        .order_by("order", "id")
+    )
+
+    available = []
+    for transition in transitions:
+        if transition.permission_codename:
+            if not user or not user.has_perm(transition.permission_codename):
+                continue
+        if not can_user_perform_transition(user, obj, transition):
+            continue
+        available.append(transition)
+
+    return available
+
+
+def _record_status_history(
+    obj: Model,
+    from_status: Status,
+    to_status: Status,
+    user: User = None,
+    reason: str = "",
+    workflow: WorkFlow = None,
+    transition: StatusTransition = None,
+    metadata: Dict[str, Any] = None,
+) -> StatusHistory:
+    from django.contrib.contenttypes.models import ContentType
+
+    content_type = ContentType.objects.get_for_model(obj)
+    return StatusHistory.objects.create(
+        content_type=content_type,
+        object_id=str(obj.pk),
+        from_status=from_status,
+        to_status=to_status,
+        workflow=workflow,
+        transition=transition,
+        changed_by=user,
+        reason=reason or "",
+        metadata=metadata or {},
+    )
+
+
+def _execute_transition_actions(
+    transition: StatusTransition,
+    action_type: str,
+    attachment: WorkflowAttachment,
+    user: User = None,
+    **context,
+) -> List[Any]:
+    actions = WorkflowAction.objects.filter(
+        transition=transition, action_type=action_type, is_active=True
+    ).order_by("order")
+    action_context = {
+        "attachment": attachment,
+        "obj": attachment.target,
+        "workflow": attachment.workflow,
+        "transition": transition,
+        "from_status": transition.from_status.status,
+        "to_status": transition.to_status.status,
+        "user": user,
+        **context,
+    }
+    return _execute_configured_actions(actions, action_context)
+
+
+def _execute_status_node_actions(
+    status_node: WorkflowStatusNode,
+    action_type: str,
+    attachment: WorkflowAttachment,
+    user: User = None,
+    **context,
+) -> List[Any]:
+    """Execute actions attached to a workflow status node."""
+    actions = WorkflowAction.objects.filter(
+        status_node=status_node, action_type=action_type, is_active=True
+    ).order_by("order")
+    action_context = {
+        "attachment": attachment,
+        "obj": attachment.target,
+        "workflow": attachment.workflow,
+        "status_node": status_node,
+        "status": status_node.status,
+        "user": user,
+        **context,
+    }
+    return _execute_configured_actions(actions, action_context)
+
+
+def _run_status_entry_actions(
+    attachment: WorkflowAttachment,
+    status: Status,
+    user: User = None,
+    **context,
+) -> List[Any]:
+    """Run entry actions for a status using the attachment's active workflow."""
+    status_node = attachment.workflow.status_nodes.filter(
+        status=status, is_active=True
+    ).first()
+    if not status_node:
+        return []
+    return _execute_status_node_actions(
+        status_node,
+        ActionType.ON_STATUS_ENTER,
+        attachment,
+        user=user,
+        **context,
+    )
+
+
+def _execute_configured_actions(actions, action_context: Dict[str, Any]) -> List[Any]:
+    """Execute ordered actions using developer-defined conditions and failure policy."""
+    results = []
+    for action in actions:
+        try:
+            if action.condition_function:
+                condition = import_string(action.condition_function)
+                should_run = condition(
+                    **action_context,
+                    action_parameters=action.parameters or {},
+                )
+                if not should_run:
+                    continue
+
+            results.append(
+                execute_action_function(
+                    function_path=action.function_path,
+                    context=action_context,
+                    parameters=action.parameters,
+                    raise_exceptions=True,
+                )
+            )
+        except Exception:
+            logger.exception(
+                "Workflow action %s failed with policy %s",
+                action.id,
+                action.failure_policy,
+            )
+            if action.failure_policy == ActionFailurePolicy.RAISE:
+                raise
+            if action.failure_policy == ActionFailurePolicy.STOP:
+                break
+    return results
+
+
+def _validate_transition_requirements(
+    transition: StatusTransition,
+    metadata: Dict[str, Any] = None,
+    obj: Model = None,
+    user: User = None,
+    attachment: WorkflowAttachment = None,
+) -> None:
+    """Validate generic transition metadata requirements."""
+    provided = metadata or {}
+    required_keys = transition.metadata.get("required_metadata_keys", [])
+    missing = [key for key in required_keys if not provided.get(key)]
+    if missing:
+        raise ValueError(
+            f"Transition '{transition.key}' requires metadata keys: {', '.join(missing)}"
+        )
+
+    validation_function = transition.metadata.get("validation_function")
+    if validation_function:
+        validator = import_string(validation_function)
+        valid = validator(
+            obj=obj,
+            transition=transition,
+            metadata=provided,
+            user=user,
+            attachment=attachment,
+        )
+        if valid is False:
+            raise ValueError(f"Transition '{transition.key}' failed custom validation")
+
+
+def _complete_transition(
+    obj: Model,
+    transition: StatusTransition,
+    user: User = None,
+    reason: str = "",
+    metadata: Dict[str, Any] = None,
+) -> StatusAttachment:
+    attachment = get_workflow_attachment(obj)
+    if not attachment:
+        raise ValueError(f"No workflow attached to {obj._meta.label}({obj.pk})")
+
+    old_status = attachment.current_status or get_current_status(obj)
+    status_attachment = set_status(
+        obj=obj,
+        status=transition.to_status.status,
+        user=user,
+        reason=reason,
+        metadata=metadata or {},
+        workflow=transition.workflow,
+        transition=transition,
+        enforce_workflow=False,
+        execute_entry_actions=False,
+    )
+    attachment.refresh_from_db()
+    attachment.pending_transition = None
+    attachment.current_status = transition.to_status.status
+    if transition.to_status.is_terminal:
+        attachment.status = WorkflowAttachmentStatus.COMPLETED
+        attachment.completed_at = timezone.now()
+    attachment.save()
+
+    _execute_transition_actions(
+        transition,
+        ActionType.AFTER_TRANSITION,
+        attachment,
+        user=user,
+        previous_status=old_status,
+        metadata=metadata or {},
+    )
+    _run_status_entry_actions(
+        attachment,
+        transition.to_status.status,
+        user=user,
+        previous_status=old_status,
+        transition=transition,
+        metadata=metadata or {},
+    )
+    return status_attachment
+
+
+@transaction.atomic
+def perform_transition(
+    obj: Model,
+    transition_key: str,
+    user: User = None,
+    reason: str = "",
+    metadata: Dict[str, Any] = None,
+) -> StatusAttachment:
+    """Perform a workflow-controlled status transition."""
+    attachment = get_workflow_attachment(obj)
+    if not attachment:
+        raise ValueError(f"No workflow attached to {obj._meta.label}({obj.pk})")
+    attachment = WorkflowAttachment.objects.select_for_update().get(pk=attachment.pk)
+    if attachment.workflow.strategy != WorkflowStrategy.STATUS_GRAPH:
+        raise ValueError("Attached workflow is not a status graph workflow")
+    if attachment.pending_transition_id:
+        raise ValueError("A transition is already pending approval")
+
+    transition = next(
+        (
+            item
+            for item in get_available_transitions(obj, user=user)
+            if item.key == transition_key
+        ),
+        None,
+    )
+    if not transition:
+        raise ValueError(f"Transition '{transition_key}' is not available")
+
+    transition.clean()
+    _validate_transition_requirements(
+        transition,
+        metadata=metadata,
+        obj=obj,
+        user=user,
+        attachment=attachment,
+    )
+    _execute_transition_actions(
+        transition,
+        ActionType.BEFORE_TRANSITION,
+        attachment,
+        user=user,
+        reason=reason,
+        metadata=metadata or {},
+    )
+
+    if transition.requires_approval:
+        attachment.pending_transition = transition
+        attachment.save(update_fields=["pending_transition", "modified_at"])
+        approvals = (transition.approval_config or {}).get("approvals", [])
+        if approvals:
+            from django.contrib.contenttypes.models import ContentType
+            from django.db.models import Max
+
+            from approval_workflow.models import ApprovalInstance
+            from approval_workflow.services import extend_flow, start_flow
+
+            from .utils import build_approval_steps_from_config, get_user_for_approval
+
+            approval_user = get_user_for_approval(obj, user, attachment)
+            content_type = ContentType.objects.get_for_model(obj)
+            approval_flow = ApprovalFlow.objects.filter(
+                content_type=content_type, object_id=str(obj.pk)
+            ).first()
+            start_step = 1
+            if approval_flow:
+                max_step = (
+                    ApprovalInstance.objects.filter(flow=approval_flow).aggregate(
+                        max_step=Max("step_number")
+                    )["max_step"]
+                    or 0
+                )
+                start_step = max_step + 1
+            steps = build_approval_steps_from_config(
+                approvals=approvals,
+                approval_user=approval_user,
+                extra_fields={
+                    "workflow_id": attachment.workflow_id,
+                    "status_transition_id": transition.id,
+                    "status_transition_key": transition.key,
+                    "from_status_id": transition.from_status.status_id,
+                    "to_status_id": transition.to_status.status_id,
+                },
+                start_step=start_step,
+            )
+            if steps:
+                if approval_flow:
+                    extend_flow(approval_flow, steps)
+                else:
+                    start_flow(obj, steps)
+        _execute_transition_actions(
+            transition,
+            ActionType.ON_TRANSITION_APPROVAL_REQUESTED,
+            attachment,
+            user=user,
+            reason=reason,
+            approval_config=transition.approval_config,
+        )
+        return get_status_attachment(obj)
+
+    return _complete_transition(
+        obj=obj,
+        transition=transition,
+        user=user,
+        reason=reason,
+        metadata=metadata,
+    )
+
+
+@transaction.atomic
+def approve_pending_transition(
+    obj: Model,
+    user: User = None,
+    reason: str = "",
+    metadata: Dict[str, Any] = None,
+) -> StatusAttachment:
+    """Approve and complete the object's pending transition."""
+    attachment = get_workflow_attachment(obj)
+    if not attachment or not attachment.pending_transition:
+        raise ValueError("No pending transition found")
+    attachment = (
+        WorkflowAttachment.objects.select_for_update()
+        .select_related("pending_transition")
+        .get(pk=attachment.pk)
+    )
+    if not attachment.pending_transition:
+        raise ValueError("No pending transition found")
+
+    transition = attachment.pending_transition
+    _execute_transition_actions(
+        transition,
+        ActionType.ON_TRANSITION_APPROVED,
+        attachment,
+        user=user,
+        reason=reason,
+        metadata=metadata or {},
+    )
+    return _complete_transition(
+        obj=obj,
+        transition=transition,
+        user=user,
+        reason=reason,
+        metadata=metadata,
+    )
+
+
+@transaction.atomic
+def reject_pending_transition(
+    obj: Model,
+    user: User = None,
+    reason: str = "",
+    metadata: Dict[str, Any] = None,
+    reject_to_status: Status = None,
+) -> Optional[StatusAttachment]:
+    """Reject the object's pending transition and apply configured behavior."""
+    attachment = get_workflow_attachment(obj)
+    if not attachment or not attachment.pending_transition:
+        raise ValueError("No pending transition found")
+    attachment = (
+        WorkflowAttachment.objects.select_for_update()
+        .select_related("pending_transition")
+        .get(pk=attachment.pk)
+    )
+    if not attachment.pending_transition:
+        raise ValueError("No pending transition found")
+
+    transition = attachment.pending_transition
+    current_status = attachment.current_status or get_current_status(obj)
+    action_metadata = metadata or {}
+
+    if not reason and not action_metadata.get("evidence"):
+        raise ValueError("Transition rejection requires a reason or evidence")
+
+    _execute_transition_actions(
+        transition,
+        ActionType.ON_TRANSITION_REJECTED,
+        attachment,
+        user=user,
+        reason=reason,
+        metadata=action_metadata,
+    )
+
+    status_attachment = get_status_attachment(obj)
+    if transition.reject_behavior == TransitionRejectBehavior.MOVE_TO_STATUS:
+        target_status = reject_to_status
+        if target_status:
+            allowed_reject_keys = transition.metadata.get("allowed_reject_status_keys")
+            if allowed_reject_keys and target_status.key not in allowed_reject_keys:
+                raise ValueError(
+                    f"Status '{target_status.key}' is not an allowed rejection target"
+                )
+            if not WorkflowStatusNode.objects.filter(
+                workflow=transition.workflow,
+                status=target_status,
+                is_active=True,
+            ).exists():
+                raise ValueError(
+                    f"Status '{target_status}' is not part of workflow '{transition.workflow}'"
+                )
+        elif transition.reject_to_status:
+            target_status = transition.reject_to_status.status
+        else:
+            raise ValueError("Rejected transition has no target status")
+
+        status_attachment = set_status(
+            obj=obj,
+            status=target_status,
+            user=user,
+            reason=reason,
+            metadata={**action_metadata, "reject_behavior": transition.reject_behavior},
+            workflow=transition.workflow,
+            transition=transition,
+            enforce_workflow=False,
+            execute_entry_actions=False,
+        )
+        attachment.current_status = target_status
+        target_node = WorkflowStatusNode.objects.filter(
+            workflow=transition.workflow,
+            status=target_status,
+            is_active=True,
+        ).first()
+        if target_node and target_node.is_terminal:
+            attachment.status = WorkflowAttachmentStatus.COMPLETED
+            attachment.completed_at = timezone.now()
+    elif transition.reject_behavior == TransitionRejectBehavior.CANCEL_WORKFLOW:
+        attachment.status = WorkflowAttachmentStatus.CANCELLED
+        attachment.completed_at = timezone.now()
+        _record_status_history(
+            obj=obj,
+            from_status=current_status,
+            to_status=current_status,
+            user=user,
+            reason=reason,
+            workflow=transition.workflow,
+            transition=transition,
+            metadata={**action_metadata, "reject_behavior": transition.reject_behavior},
+        )
+    else:
+        _record_status_history(
+            obj=obj,
+            from_status=current_status,
+            to_status=current_status,
+            user=user,
+            reason=reason,
+            workflow=transition.workflow,
+            transition=transition,
+            metadata={**action_metadata, "reject_behavior": transition.reject_behavior},
+        )
+
+    attachment.pending_transition = None
+    attachment.save()
+    if transition.reject_behavior == TransitionRejectBehavior.MOVE_TO_STATUS:
+        _run_status_entry_actions(
+            attachment,
+            target_status,
+            user=user,
+            previous_status=current_status,
+            transition=transition,
+            metadata={**action_metadata, "reject_behavior": transition.reject_behavior},
+        )
+    return status_attachment
+
+
 # Action execution services
 
 
@@ -1063,7 +1859,10 @@ def get_actions_for_event(
 
 
 def execute_action_function(
-    function_path: str, context: Dict[str, Any], parameters: Dict[str, Any] = None
+    function_path: str,
+    context: Dict[str, Any],
+    parameters: Dict[str, Any] = None,
+    raise_exceptions: bool = False,
 ) -> Any:
     """Execute an action function by its path.
 
@@ -1117,16 +1916,26 @@ def execute_action_function(
             f"Action '{function_path}' not in secure registry. "
             f"Using legacy dynamic import (not recommended)."
         )
-        return _execute_action_function_legacy(function_path, context, parameters)
+        return _execute_action_function_legacy(
+            function_path,
+            context,
+            parameters,
+            raise_exceptions=raise_exceptions,
+        )
 
     except (ActionNotRegisteredError, ActionExecutionError) as e:
         # Registry-specific errors - try legacy as fallback
         logger.warning(f"Registry execution failed for '{function_path}': {e}")
+        if raise_exceptions:
+            raise
         return _execute_action_function_legacy(function_path, context, parameters)
 
 
 def _execute_action_function_legacy(
-    function_path: str, context: Dict[str, Any], parameters: Dict[str, Any] = None
+    function_path: str,
+    context: Dict[str, Any],
+    parameters: Dict[str, Any] = None,
+    raise_exceptions: bool = False,
 ) -> Any:
     """Legacy action execution using dynamic import.
 
@@ -1168,14 +1977,20 @@ def _execute_action_function_legacy(
         logger.error(
             f"Failed to import module for action function {function_path}: {str(e)}"
         )
+        if raise_exceptions:
+            raise
         return None
     except AttributeError as e:
         logger.error(
             f"Function {function_name} not found in module {module_path}: {str(e)}"
         )
+        if raise_exceptions:
+            raise
         return None
     except Exception as e:
         logger.error(f"Error executing action function {function_path}: {str(e)}")
+        if raise_exceptions:
+            raise
         return None
 
 

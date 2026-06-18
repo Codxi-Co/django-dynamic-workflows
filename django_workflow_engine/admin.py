@@ -3,16 +3,32 @@
 from django.contrib import admin
 from django.urls import reverse
 from django.utils.html import format_html
-from django.utils.safestring import mark_safe
 
 from .models import (
+    ModelStatus,
+    ModelStatusConfiguration,
     Pipeline,
     Stage,
+    Status,
+    StatusAttachment,
+    StatusHistory,
+    StatusTransition,
     WorkFlow,
     WorkflowAction,
     WorkflowAttachment,
     WorkflowConfiguration,
+    WorkflowStatusNode,
 )
+
+
+class ModelStatusInline(admin.TabularInline):
+    model = ModelStatus
+    extra = 0
+
+
+class WorkflowStatusNodeInline(admin.TabularInline):
+    model = WorkflowStatusNode
+    extra = 0
 
 
 @admin.register(WorkFlow)
@@ -30,6 +46,7 @@ class WorkFlowAdmin(admin.ModelAdmin):
     list_filter = ["status", "company", "created_at"]
     search_fields = ["name_en", "name_ar", "description"]
     readonly_fields = ["created_at", "modified_at"]
+    inlines = [WorkflowStatusNodeInline]
 
     fieldsets = (
         (None, {"fields": ("company", "name_en", "name_ar", "status", "description")}),
@@ -137,6 +154,8 @@ class WorkflowAttachmentAdmin(admin.ModelAdmin):
         "get_target_object",
         "workflow",
         "status",
+        "current_status",
+        "pending_transition",
         "current_stage",
         "progress_percentage",
         "started_at",
@@ -149,7 +168,15 @@ class WorkflowAttachmentAdmin(admin.ModelAdmin):
         (None, {"fields": ("workflow", "content_type", "object_id", "status")}),
         (
             "Progress",
-            {"fields": ("current_stage", "current_pipeline", "progress_percentage")},
+            {
+                "fields": (
+                    "current_stage",
+                    "current_pipeline",
+                    "current_status",
+                    "pending_transition",
+                    "progress_percentage",
+                )
+            },
         ),
         ("Tracking", {"fields": ("started_at", "completed_at", "started_by")}),
         ("Metadata", {"fields": ("metadata",), "classes": ("collapse",)}),
@@ -173,6 +200,108 @@ class WorkflowAttachmentAdmin(admin.ModelAdmin):
         return "-"
 
     get_target_object.short_description = "Target Object"
+
+
+@admin.register(Status)
+class StatusAdmin(admin.ModelAdmin):
+    list_display = [
+        "key",
+        "name_en",
+        "name_ar",
+        "content_type",
+        "category",
+        "company",
+        "is_active",
+    ]
+    list_filter = ["category", "is_active", "company", "content_type"]
+    search_fields = ["key", "name_en", "name_ar"]
+    readonly_fields = ["created_at", "modified_at"]
+
+
+@admin.register(ModelStatusConfiguration)
+class ModelStatusConfigurationAdmin(admin.ModelAdmin):
+    list_display = [
+        "get_model_name",
+        "is_enabled",
+        "default_status",
+        "status_field",
+        "allow_direct_change",
+    ]
+    list_filter = ["is_enabled", "allow_direct_change", "content_type"]
+    search_fields = ["content_type__app_label", "content_type__model"]
+    readonly_fields = ["created_at", "modified_at"]
+    inlines = [ModelStatusInline]
+
+    def get_model_name(self, obj):
+        return f"{obj.content_type.app_label}.{obj.content_type.model}"
+
+    get_model_name.short_description = "Model"
+
+
+@admin.register(StatusAttachment)
+class StatusAttachmentAdmin(admin.ModelAdmin):
+    list_display = ["id", "get_target_object", "status", "changed_by", "changed_at"]
+    list_filter = ["status", "content_type", "changed_at"]
+    search_fields = ["object_id", "status__name_en", "status__key"]
+    readonly_fields = ["created_at", "modified_at", "changed_at"]
+
+    def get_target_object(self, obj):
+        return str(obj.target) if obj.target else "-"
+
+    get_target_object.short_description = "Target Object"
+
+
+@admin.register(StatusHistory)
+class StatusHistoryAdmin(admin.ModelAdmin):
+    list_display = [
+        "id",
+        "get_target_object",
+        "from_status",
+        "to_status",
+        "workflow",
+        "transition",
+        "changed_by",
+        "created_at",
+    ]
+    list_filter = ["to_status", "workflow", "transition", "content_type", "created_at"]
+    search_fields = ["object_id", "reason"]
+    readonly_fields = ["created_at"]
+
+    def get_target_object(self, obj):
+        return str(obj.target) if obj.target else "-"
+
+    get_target_object.short_description = "Target Object"
+
+
+@admin.register(WorkflowStatusNode)
+class WorkflowStatusNodeAdmin(admin.ModelAdmin):
+    list_display = [
+        "workflow",
+        "status",
+        "is_initial",
+        "is_terminal",
+        "order",
+        "is_active",
+    ]
+    list_filter = ["is_initial", "is_terminal", "is_active", "workflow"]
+    search_fields = ["workflow__name_en", "status__name_en", "status__key"]
+
+
+@admin.register(StatusTransition)
+class StatusTransitionAdmin(admin.ModelAdmin):
+    list_display = [
+        "key",
+        "name_en",
+        "workflow",
+        "from_status",
+        "to_status",
+        "requires_approval",
+        "reject_behavior",
+        "is_active",
+    ]
+    list_filter = ["requires_approval", "reject_behavior", "is_active", "workflow"]
+    search_fields = ["key", "name_en", "name_ar", "workflow__name_en"]
+    readonly_fields = ["created_at", "modified_at"]
 
 
 @admin.register(WorkflowConfiguration)
@@ -242,16 +371,35 @@ class WorkflowActionAdmin(admin.ModelAdmin):
         "workflow__name_en",
         "pipeline__name_en",
         "stage__name_en",
+        "transition__name_en",
     ]
     readonly_fields = ["created_at", "modified_at", "scope_level"]
 
     fieldsets = (
-        (None, {"fields": ("action_type", "function_path", "is_active", "order")}),
+        (
+            None,
+            {
+                "fields": (
+                    "action_type",
+                    "function_path",
+                    "condition_function",
+                    "failure_policy",
+                    "is_active",
+                    "order",
+                )
+            },
+        ),
         (
             "Scope (select only one)",
             {
-                "fields": ("workflow", "pipeline", "stage"),
-                "description": "Select exactly one scope: Stage (highest priority) → Pipeline → Workflow",
+                "fields": (
+                    "workflow",
+                    "pipeline",
+                    "stage",
+                    "transition",
+                    "status_node",
+                ),
+                "description": "Select exactly one action scope.",
             },
         ),
         ("Configuration", {"fields": ("parameters",), "classes": ("collapse",)}),
@@ -278,6 +426,10 @@ class WorkflowActionAdmin(admin.ModelAdmin):
             )
         elif obj.workflow:
             return format_html("<strong>Workflow:</strong> {}", obj.workflow.name_en)
+        elif obj.transition:
+            return format_html(
+                "<strong>Transition:</strong> {}", obj.transition.name_en
+            )
         return "Default"
 
     get_scope.short_description = "Scope"

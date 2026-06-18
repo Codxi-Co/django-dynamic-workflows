@@ -248,17 +248,38 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
                 user_id=getattr(approval_instance, "action_user", None),
             )
 
-            # Trigger approve actions before moving to next stage
-            from .choices import ActionType
-            from .services import get_workflow_attachment, trigger_workflow_event
+            from .choices import ActionType, WorkflowStrategy
+            from .services import (
+                approve_pending_transition,
+                get_workflow_attachment,
+                trigger_workflow_event,
+            )
 
             attachment = get_workflow_attachment(self.instance)
+            action_user = getattr(approval_instance, "action_user", None)
+            if (
+                attachment
+                and attachment.workflow.strategy == WorkflowStrategy.STATUS_GRAPH
+                and attachment.pending_transition_id
+            ):
+                approve_pending_transition(
+                    self.instance,
+                    user=action_user,
+                    reason=getattr(approval_instance, "comment", ""),
+                    metadata={
+                        "approval_instance_id": approval_instance.id,
+                        "approval_flow_id": approval_instance.flow_id,
+                    },
+                )
+                return
+
+            # Trigger approve actions before moving to next stage
             if attachment:
                 trigger_workflow_event(
                     attachment,
                     ActionType.AFTER_APPROVE,
                     approval_instance=approval_instance,
-                    user=getattr(approval_instance, "action_user", None),
+                    user=action_user,
                 )
 
             # Move to next workflow stage
@@ -276,6 +297,7 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
 
         except Exception as e:
             logger.error(f"Error progressing workflow after final approval: {str(e)}")
+            raise
 
     def on_approve(self, approval_instance):
         """Called when an approval occurs (newer approval_workflow API)."""
@@ -296,11 +318,45 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
         try:
             logger.info(f"Approval rejected for {self.instance}")
 
-            # Trigger reject actions first
-            from .choices import ActionType
-            from .services import get_workflow_attachment, trigger_workflow_event
+            from .choices import ActionType, WorkflowStrategy
+            from .services import (
+                get_workflow_attachment,
+                reject_pending_transition,
+                trigger_workflow_event,
+            )
 
             attachment = get_workflow_attachment(self.instance)
+            if (
+                attachment
+                and attachment.workflow.strategy == WorkflowStrategy.STATUS_GRAPH
+            ):
+                if attachment.pending_transition_id:
+                    rejection_context = (attachment.metadata or {}).pop(
+                        "_status_transition_rejection", {}
+                    )
+                    attachment.save(update_fields=["metadata", "modified_at"])
+                    reject_to_status = None
+                    reject_to_status_id = rejection_context.get("reject_to_status_id")
+                    if reject_to_status_id:
+                        from .models import Status
+
+                        reject_to_status = Status.objects.filter(
+                            pk=reject_to_status_id
+                        ).first()
+                    reject_pending_transition(
+                        self.instance,
+                        user=getattr(approval_instance, "action_user", None),
+                        reason=getattr(approval_instance, "comment", ""),
+                        metadata={
+                            **rejection_context.get("metadata", {}),
+                            "approval_instance_id": approval_instance.id,
+                            "approval_flow_id": approval_instance.flow_id,
+                        },
+                        reject_to_status=reject_to_status,
+                    )
+                return
+
+            # Trigger reject actions first
             if attachment:
                 trigger_workflow_event(
                     attachment,
@@ -322,6 +378,7 @@ class WorkflowApprovalHandler(BaseApprovalHandler):
 
         except Exception as e:
             logger.error(f"Error handling workflow rejection: {str(e)}")
+            raise
 
     def after_resubmission(self, approval_instance):
         """Called when resubmission is requested."""

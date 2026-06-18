@@ -4,7 +4,9 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 
 ## Features
 
-- **Flexible Workflow Strategies** ⭐ NEW in v1.5.0: Choose from 3 hierarchy levels (Stage/Pipeline/Workflow-only) based on complexity
+- **Flexible Workflow Strategies** ⭐: Choose from 4 models: Stage/Pipeline/Workflow-only/Status Graph
+- **Business Status Workflows**: Configure reusable statuses, model-specific status catalogs, and graph transitions for Tickets, Tasks, Opportunities, and any model
+- **Status Workflow APIs & Helpers**: Create full status workflow designs in one request or from Python helper services
 - **Generic Workflow Attachment**: Attach workflows to any Django model without hardcoded relationships
 - **Database-Stored Actions**: Configure actions dynamically in the database with inheritance system
 - **2-Tier Action Priority System**: Database → Settings action resolution (no conflicts)
@@ -72,7 +74,15 @@ DJANGO_WORKFLOW_ENGINE = {
     'PERMISSIONS': {
         'REQUIRE_PERMISSION_TO_START': True,
         'REQUIRE_PERMISSION_TO_APPROVE': True,
-    }
+    },
+
+    # Optional: customize packaged status APIs to match your project conventions.
+    # Useful when your project has its own company scoping mixins and base serializers.
+    'STATUS_API_VIEWSET_MIXINS': [
+        'your_project.api.mixins.GenericCompanyViewSetMixin',
+    ],
+    'STATUS_BASE_SERIALIZER': 'your_project.api.serializers.BaseSerializer',
+    'STATUS_NAMED_SERIALIZER': 'your_project.api.serializers.SharedNamedWithTimeStampedSerializer',
 }
 ```
 
@@ -488,7 +498,7 @@ attachment = attach_workflow_to_object(
 
 ## Workflow Strategy System
 
-**New in v1.5.0**: The workflow engine now supports **3 flexible strategies** for structuring your approval workflows based on organizational complexity.
+The workflow engine supports **4 flexible strategies** for structuring approval and business-status workflows based on organizational complexity.
 
 ### Strategy Overview
 
@@ -499,6 +509,7 @@ Choose the right strategy based on your workflow complexity and organizational s
 | **WORKFLOW_PIPELINE_STAGE** | 1 | Workflow → Pipeline → Stage | `stage_info` | Complex multi-department workflows with detailed stages |
 | **WORKFLOW_PIPELINE** | 2 | Workflow → Pipeline | `pipeline_info` | Department-level approvals without stage granularity |
 | **WORKFLOW_ONLY** | 3 | Workflow only | `workflow_info` | Simple single-step approval workflows |
+| **STATUS_GRAPH** | 4 | Status nodes + transitions | `StatusTransition.approvals` | Ticketing, CRM opportunities, tasks, and state-machine workflows |
 
 ### Strategy 1: WORKFLOW_PIPELINE_STAGE (Full Hierarchy)
 
@@ -649,6 +660,80 @@ workflow = WorkFlow.objects.create(
 - Single-step authorization
 - Lightweight approval needs
 
+### Strategy 4: STATUS_GRAPH (Business Status Workflow)
+
+**Best For**: State-machine style workflows where an object can move through named business statuses.
+
+**Structure**:
+```
+Workflow
+  ├── Status: New
+  ├── Status: In Progress
+  ├── Status: On Hold
+  ├── Status: Resolved
+  └── Transitions:
+      ├── New -> In Progress
+      ├── In Progress -> On Hold
+      ├── On Hold -> In Progress
+      ├── In Progress -> Resolved
+      └── Resolved -> Closed
+```
+
+**Configuration Example**:
+```python
+from django_workflow_engine.status_services import create_status_flow_design
+
+create_status_flow_design(
+    {
+        "model": "support.ticket",
+        "company": request.user.company_id,
+        "status_field": "status",
+        "default_status": "new",
+        "terminal_statuses": ["closed", "rejected"],
+        "workflow": {
+            "name_en": "Ticket Workflow",
+            "name_ar": "سير عمل التذاكر",
+        },
+        "statuses": [
+            {"code": "new", "name_en": "New", "name_ar": "جديد", "category": "open"},
+            {"code": "in_progress", "name_en": "In Progress", "name_ar": "قيد التنفيذ", "category": "active"},
+            {"code": "closed", "name_en": "Closed", "name_ar": "مغلق", "category": "done", "is_terminal": True},
+        ],
+        "transitions": [
+            {
+                "code": "start_progress",
+                "name_en": "Start Progress",
+                "from": "new",
+                "to": "in_progress",
+                "metadata": {"required_metadata_keys": ["assignee_id"]},
+            },
+            {
+                "code": "close",
+                "name_en": "Close",
+                "from": "in_progress",
+                "to": "closed",
+                "approvals": [{"approval_type": "role", "user_role": 5, "role_selection_strategy": "anyone"}],
+            },
+        ],
+    },
+    user=request.user,
+)
+```
+
+**Use Cases**:
+- Support ticket status flows
+- CRM opportunity pipelines
+- Task boards and operational queues
+- Any workflow where one status can have multiple allowed next actions
+
+For the complete guide, including REST APIs, helpers, approval forms, frontend diagram payloads, and settings customization, see **[STATUS_WORKFLOWS_GUIDE.md](STATUS_WORKFLOWS_GUIDE.md)**.
+
+For complete implementation examples covering standard support, L1/L2/L3
+escalation, and site-visit tickets, see
+**[STATUS_WORKFLOW_IMPLEMENTATION_CASES.md](STATUS_WORKFLOW_IMPLEMENTATION_CASES.md)**.
+The guide also covers direct `DEFAULT_STATUS_WORKFLOWS` designs and idempotent
+company provisioning with `auto_generate_default_flow(company_id, flow=None)`.
+
 ### Strategy Selection Guide
 
 **Choose Strategy 1** if you need:
@@ -668,6 +753,13 @@ workflow = WorkFlow.objects.create(
 - Minimal complexity
 - Quick implementation
 - One approver or approval group
+
+**Choose Strategy 4** if you need:
+- Business-visible statuses such as New, In Progress, On Hold, Won, Lost, Closed
+- A model-specific status catalog
+- Multiple possible next actions from the same status
+- Transition-level approvals or form requirements
+- Frontend diagram rendering of nodes and edges
 
 ### Strategy Validation
 
@@ -965,6 +1057,71 @@ python manage.py migrate django_workflow_engine
 
 This adds the `completion_status_value` and `rejection_status_value` fields to `WorkflowConfiguration`.
 
+## Business Status Graphs
+
+The package also supports first-class business statuses through `WorkflowStrategy.STATUS_GRAPH`. This is different from automatic workflow completion status updates: status graphs model the object's live business state and allowed movements.
+
+### Quick API Reference
+
+```http
+POST /status/                         # Create one status
+GET  /status/models/                  # Models enabled for statuses
+POST /status/flow/                    # Create full status workflow design
+GET  /status/flow/<app_label.model>/  # Read full flow for a model
+GET  /status/options/<app_label.model>/      # Dropdown/status options
+GET  /status/transitions/<app_label.model>/  # Diagram nodes/edges
+```
+
+### Quick Helper Reference
+
+```python
+from django_workflow_engine.status_services import (
+    create_status_for_model,
+    create_status_flow_design,
+    get_status_flow_design,
+)
+
+create_status_for_model(
+    model="crm.opportunity",
+    name_en="Qualified",
+    name_ar="مؤهلة",
+    category="active",
+    company=request.user.company,
+    user=request.user,
+)
+
+flow = create_status_flow_design(payload, user=request.user)
+diagram = get_status_flow_design("crm.opportunity")
+```
+
+### Approval and Forms
+
+Transitions use the same approval format as the existing approval system:
+
+```json
+{
+  "code": "mark_won",
+  "from": "qualified",
+  "to": "won",
+  "approvals": [
+    {
+      "approval_type": "role",
+      "user_role": 5,
+      "role_selection_strategy": "anyone",
+      "step_approval_type": "submit",
+      "required_form": 12
+    }
+  ]
+}
+```
+
+If `approvals` is empty, missing, or `null`, the transition does not require approval. If it has values, the engine creates or extends `ApprovalFlow` and stores transition metadata in `ApprovalInstance.extra_fields`.
+
+Read the full implementation guide: **[STATUS_WORKFLOWS_GUIDE.md](STATUS_WORKFLOWS_GUIDE.md)**.
+
+Business-case implementation examples:
+**[STATUS_WORKFLOW_IMPLEMENTATION_CASES.md](STATUS_WORKFLOW_IMPLEMENTATION_CASES.md)**.
+
 ### Best Practices
 
 1. **Use consistent status values** across your application
@@ -987,6 +1144,12 @@ This adds the `completion_status_value` and `rejection_status_value` fields to `
 ## Custom Actions
 
 The Django Workflow Engine supports powerful custom actions that execute automatically at key workflow events. Actions can send emails, update external systems, create tasks, log events, and more.
+
+For status graphs, actions may be attached to a status node or transition.
+Projects remain responsible for their notification, scheduler, SLA, task, and
+escalation implementations. The engine supplies lifecycle context, ordered
+execution, optional developer-defined conditions, and `continue`, `stop`, or
+`raise` failure policies.
 
 ### Quick Example
 ```python
@@ -1032,6 +1195,25 @@ WorkflowAction.objects.create(
 | `ON_WORKFLOW_COMPLETE` | When workflow finishes | Final actions, cleanup |
 | `AFTER_REJECT` | After rejection | Rejection handling |
 | `AFTER_RESUBMISSION` | After resubmission | Resubmission handling |
+| `BEFORE_TRANSITION` | Before a status graph transition | Validation, pre-change notifications |
+| `AFTER_TRANSITION` | After a status graph transition completes | Status notifications, downstream updates |
+| `ON_TRANSITION_APPROVAL_REQUESTED` | When a status transition waits for approval | Approval request notifications |
+| `ON_TRANSITION_APPROVED` | When a pending status transition is approved | Approval audit, notifications |
+| `ON_TRANSITION_REJECTED` | When a pending status transition is rejected | Rejection audit, evidence handling |
+| `ON_STATUS_ENTER` | After a status graph transition moves into a status | SLA timers, reminders, status-local notifications |
+
+Status graph workflows can also attach actions directly to a `WorkflowStatusNode`.
+For example, an `In Review` status can schedule an SLA reminder every time an
+object enters that status:
+
+```python
+WorkflowAction.objects.create(
+    status_node=in_review_node,
+    action_type=ActionType.ON_STATUS_ENTER,
+    function_path="support.workflow_actions.schedule_review_sla_reminder",
+    parameters={"sla_minutes": 120, "notify_user": "qa.lead@example.com"},
+)
+```
 
 ### Action Execution Order (Conflict Prevention)
 
@@ -1059,6 +1241,9 @@ from approval_workflow.choices import RoleSelectionStrategy
 
 ### 📚 Comprehensive Guides
 
+- **Status Workflows**: Status models, APIs, approvals, permissions, and diagrams: **[STATUS_WORKFLOWS_GUIDE.md](STATUS_WORKFLOWS_GUIDE.md)**
+- **Ticket Implementation Cases**: Standard support, tiered escalation, and site-visit workflow examples: **[STATUS_WORKFLOW_IMPLEMENTATION_CASES.md](STATUS_WORKFLOW_IMPLEMENTATION_CASES.md)**
+- **Status Workflow APIs**: API-only setup and runtime examples for all ticket cases: **[STATUS_WORKFLOW_API_GUIDE.md](STATUS_WORKFLOW_API_GUIDE.md)**
 - **Custom Actions**: For complete documentation including advanced examples, conflict resolution, and best practices, see: **[CUSTOM_ACTIONS_README.md](CUSTOM_ACTIONS_README.md)**
 - **Approval Types**: For detailed information on approval behavior types (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE), see: **[APPROVAL_TYPE_INTEGRATION_GUIDE.md](APPROVAL_TYPE_INTEGRATION_GUIDE.md)**
 
@@ -2389,8 +2574,9 @@ print(f"Deleted: {result['attachments_deleted']} attachments")
 
 ## Dependencies
 
-- Django >= 4.0
-- django-approval-workflow >= 0.8.0
+- Python >= 3.10
+- Django >= 5.2
+- django-approval-workflow >= 0.9.0
 
 ## License
 

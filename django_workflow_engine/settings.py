@@ -6,11 +6,50 @@ from typing import Optional
 
 from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
+from django.utils.module_loading import import_string
 
 
 def get_workflow_settings():
     """Get workflow engine settings with defaults"""
     return getattr(settings, "DJANGO_WORKFLOW_ENGINE", {})
+
+
+def _import_setting(path, default=None):
+    """Import a class/function from settings, returning default when not set."""
+    if not path:
+        return default
+    try:
+        return import_string(path)
+    except ImportError as exc:
+        raise ImproperlyConfigured(f"Could not import '{path}': {exc}") from exc
+
+
+def get_status_api_viewset_mixins():
+    """Return project-provided mixins for status API ViewSets."""
+    workflow_settings = get_workflow_settings()
+    mixins = workflow_settings.get("STATUS_API_VIEWSET_MIXINS", [])
+    if isinstance(mixins, str):
+        mixins = [mixins]
+    return tuple(_import_setting(path) for path in mixins)
+
+
+def get_status_base_serializer_class():
+    """Return base serializer class for non-named status serializers."""
+    from rest_framework import serializers
+
+    workflow_settings = get_workflow_settings()
+    return _import_setting(
+        workflow_settings.get("STATUS_BASE_SERIALIZER"),
+        serializers.ModelSerializer,
+    )
+
+
+def get_status_named_serializer_class():
+    """Return base serializer class for named status serializers."""
+    return _import_setting(
+        get_workflow_settings().get("STATUS_NAMED_SERIALIZER"),
+        get_status_base_serializer_class(),
+    )
 
 
 def get_enabled_models():
@@ -214,6 +253,69 @@ def get_workflow_actions_config():
     return getattr(django_settings, "WORKFLOW_ACTIONS_CONFIG", None)
 
 
+def get_transition_actor_settings(model_or_obj=None):
+    """
+    Get settings used to resolve who may perform status transitions.
+
+    These settings intentionally describe where to find users on the target object,
+    because every project names ownership, assignment, teams, and departments
+    differently.
+    """
+    workflow_settings = get_workflow_settings()
+    configuration = workflow_settings.get("TRANSITION_ACTORS", {})
+    if not configuration or not model_or_obj:
+        return configuration
+
+    # Backward-compatible flat configuration.
+    if any(str(key).isupper() for key in configuration):
+        return configuration
+
+    if isinstance(model_or_obj, str):
+        model_string = model_or_obj
+    else:
+        if not hasattr(model_or_obj, "_meta"):
+            return configuration.get("default", {})
+        model_string = getattr(
+            model_or_obj._meta,
+            "label",
+            f"{model_or_obj._meta.app_label}.{model_or_obj.__class__.__name__}",
+        )
+
+    resolved = dict(configuration.get("default") or {})
+    model_config = configuration.get(model_string)
+    if model_config is None:
+        normalized = model_string.lower()
+        model_config = next(
+            (
+                value
+                for key, value in configuration.items()
+                if key != "default" and key.lower() == normalized
+            ),
+            None,
+        )
+    if model_config:
+        resolved.update(model_config)
+    return resolved
+
+
+def get_default_status_workflows():
+    """Return model-specific default status workflow definitions."""
+    return get_workflow_settings().get("DEFAULT_STATUS_WORKFLOWS", {})
+
+
+def get_default_status_workflow_config(model_string: str) -> Optional[dict]:
+    """Resolve a default status workflow config using exact/default fallback."""
+    configurations = get_default_status_workflows()
+    if model_string in configurations:
+        return configurations[model_string]
+
+    normalized = model_string.lower()
+    for configured_model, configuration in configurations.items():
+        if configured_model != "default" and configured_model.lower() == normalized:
+            return configuration
+    return configurations.get("default")
+
+
 def get_actions_config_for_model(model_string: str) -> Optional[list]:
     """
     Resolve action config list for a model string.
@@ -321,6 +423,47 @@ def validate_workflow_settings():
                 "Format should be 'app_label.ModelName' or 'default'"
             )
 
+    default_status_workflows = workflow_settings.get("DEFAULT_STATUS_WORKFLOWS", {})
+    if default_status_workflows and not isinstance(default_status_workflows, dict):
+        raise ImproperlyConfigured(
+            "DJANGO_WORKFLOW_ENGINE['DEFAULT_STATUS_WORKFLOWS'] must be a dict"
+        )
+    for key, configuration in default_status_workflows.items():
+        if key != "default" and ("." not in key or not isinstance(key, str)):
+            raise ImproperlyConfigured(
+                f"Invalid key '{key}' in DEFAULT_STATUS_WORKFLOWS. "
+                "Format should be 'app_label.ModelName' or 'default'"
+            )
+        if not isinstance(configuration, dict):
+            raise ImproperlyConfigured(
+                f"DEFAULT_STATUS_WORKFLOWS['{key}'] must be a dict"
+            )
+        has_direct_design = bool(configuration.get("statuses"))
+        if (
+            not configuration.get("factory")
+            and not configuration.get("design")
+            and not has_direct_design
+        ):
+            raise ImproperlyConfigured(
+                f"DEFAULT_STATUS_WORKFLOWS['{key}'] requires a full flow design, "
+                "'design', or 'factory'"
+            )
+
+    transition_actors = workflow_settings.get("TRANSITION_ACTORS", {})
+    if transition_actors and not isinstance(transition_actors, dict):
+        raise ImproperlyConfigured(
+            "DJANGO_WORKFLOW_ENGINE['TRANSITION_ACTORS'] must be a dict"
+        )
+    if transition_actors and not any(str(key).isupper() for key in transition_actors):
+        for key, configuration in transition_actors.items():
+            if key != "default" and ("." not in key or not isinstance(key, str)):
+                raise ImproperlyConfigured(
+                    f"Invalid key '{key}' in TRANSITION_ACTORS. "
+                    "Format should be 'app_label.ModelName' or 'default'"
+                )
+            if not isinstance(configuration, dict):
+                raise ImproperlyConfigured(f"TRANSITION_ACTORS['{key}'] must be a dict")
+
 
 # Default settings template for documentation
 DEFAULT_SETTINGS = {
@@ -347,6 +490,28 @@ DEFAULT_SETTINGS = {
         #     'conditions': {}  # Optional conditions
         # }
     },
+    "DEFAULT_STATUS_WORKFLOWS": {
+        # Create one company-owned status workflow per configured model.
+        # 'support.Ticket': {
+        #     'status_field': 'status',
+        #     'allow_direct_change': False,
+        #     'default_status': 'new',
+        #     'terminal_statuses': ['closed'],
+        #     'workflow': {
+        #         'name_en': 'Standard Support Workflow',
+        #         'name_ar': 'Standard Support Workflow',
+        #     },
+        #     'statuses': [
+        #         {'code': 'new', 'name_en': 'New', 'name_ar': 'New'},
+        #         {'code': 'closed', 'name_en': 'Closed', 'name_ar': 'Closed'},
+        #     ],
+        #     'transitions': [
+        #         {'code': 'close', 'name_en': 'Close', 'from': 'new', 'to': 'closed'},
+        #     ],
+        #     'company_field': 'company',
+        #     'auto_start': True,
+        # }
+    },
     "PERMISSIONS": {
         "REQUIRE_PERMISSION_TO_START": False,
         "REQUIRE_PERMISSION_TO_APPROVE": False,
@@ -356,6 +521,19 @@ DEFAULT_SETTINGS = {
             "can_reject": "workflow.reject_workflow",
             "can_delegate": "workflow.delegate_workflow",
         },
+    },
+    "TRANSITION_ACTORS": {
+        # Model-specific field/function discovery for transition authorization.
+        "default": {
+            "OWNER_FIELD": "created_by",
+            "MANAGER_FIELD": "manager",
+        },
+        # "support.Ticket": {
+        #     "ASSIGNED_USER_FUNCTION": "support.workflow_actors.get_assigned_user",
+        # },
+        # "tasks.Task": {
+        #     "ASSIGNED_USER_FIELD": "assignee",
+        # },
     },
 }
 

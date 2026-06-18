@@ -498,7 +498,11 @@ def _build_role_strategy_steps(
     from .enhanced_logging import workflow_logger
 
     # Enhanced strategies that require multiple parallel steps
-    if role_selection_strategy == RoleSelectionStrategy.QUORUM:
+    quorum_strategy = getattr(RoleSelectionStrategy, "QUORUM", None)
+    majority_strategy = getattr(RoleSelectionStrategy, "MAJORITY", None)
+    percentage_strategy = getattr(RoleSelectionStrategy, "PERCENTAGE", None)
+
+    if quorum_strategy and role_selection_strategy == quorum_strategy:
         steps = _build_quorum_steps(stage, role, created_by_user, start_step)
         workflow_logger.info(
             "activating_role_step",
@@ -509,7 +513,7 @@ def _build_role_strategy_steps(
         )
         return steps
 
-    elif role_selection_strategy == RoleSelectionStrategy.MAJORITY:
+    elif majority_strategy and role_selection_strategy == majority_strategy:
         steps = _build_majority_steps(stage, role, created_by_user, start_step)
         workflow_logger.info(
             "activating_role_step",
@@ -518,7 +522,7 @@ def _build_role_strategy_steps(
         )
         return steps
 
-    elif role_selection_strategy == RoleSelectionStrategy.PERCENTAGE:
+    elif percentage_strategy and role_selection_strategy == percentage_strategy:
         steps = _build_percentage_steps(stage, role, created_by_user, start_step)
         workflow_logger.info(
             "activating_role_step",
@@ -1034,6 +1038,20 @@ def build_approval_steps_from_config(
                 logger.error(f"Error fetching role: {e}")
                 step["assigned_to"] = approval_user
 
+        if approval_data.get("required_form"):
+            form_id = approval_data["required_form"]
+            if isinstance(form_id, dict) and "val" in form_id:
+                form_id = form_id["val"]
+            try:
+                form_model_path = getattr(
+                    settings, "APPROVAL_DYNAMIC_FORM_MODEL", "common.DynamicForm"
+                )
+                app_label, model_name = form_model_path.split(".")
+                FormModel = apps.get_model(app_label, model_name)
+                step["form"] = FormModel.objects.get(id=form_id)
+            except Exception as e:
+                logger.error(f"Error fetching form: {e}")
+
         # Handle step approval type (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE)
         step_approval_type = approval_data.get("step_approval_type")
         if step_approval_type:
@@ -1048,35 +1066,6 @@ def build_approval_steps_from_config(
         steps.append(step)
 
     return steps
-
-
-def get_workflow_location_string(attachment) -> str:
-    """Get human-readable location string based on workflow strategy.
-
-    Returns a location string like:
-    - Strategy 1: "stage: Stage Name"
-    - Strategy 2: "pipeline: Pipeline Name"
-    - Strategy 3: "workflow: Workflow Name"
-
-    Args:
-        attachment: WorkflowAttachment instance
-
-    Returns:
-        Location string describing current position in workflow
-    """
-    from .choices import WorkflowStrategy
-
-    if not attachment:
-        return "unknown"
-
-    strategy = attachment.workflow.strategy
-
-    if strategy == WorkflowStrategy.WORKFLOW_PIPELINE_STAGE:
-        return f"stage: {attachment.current_stage.name_en if attachment.current_stage else 'None'}"
-    elif strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
-        return f"pipeline: {attachment.current_pipeline.name_en if attachment.current_pipeline else 'None'}"
-    else:  # WorkflowStrategy.WORKFLOW_ONLY
-        return f"workflow: {attachment.workflow.name_en}"
 
 
 def get_workflow_first_stage(workflow) -> Optional:

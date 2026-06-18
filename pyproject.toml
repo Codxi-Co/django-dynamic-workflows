@@ -8,7 +8,7 @@ exclude = ["sandbox*", "tests*"]
 
 [project]
 name = "django-dynamic-workflows"
-version = "1.7.0"
+version = "1.8.0"
 description = "A powerful, configurable Django package for implementing dynamic multi-step workflow processes with database-stored actions"
 authors = [
     { name="Mohamed Ibrahim", email="info@codxi.com" },
@@ -29,6 +29,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Internet :: WWW/HTTP",

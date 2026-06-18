@@ -14,13 +14,17 @@ from django.contrib.contenttypes.models import ContentType
 from django.core.exceptions import ValidationError
 from django.db import models, transaction
 from django.db.models import Q
+from django.utils.text import slugify
 from django.utils.translation import gettext_lazy as _
 
-from approval_workflow.choices import ApprovalType
+from approval_workflow.choices import ApprovalType, RoleSelectionStrategy
 
 from .choices import (
+    ActionFailurePolicy,
     ActionType,
     ApprovalTypes,
+    StatusCategory,
+    TransitionRejectBehavior,
     WorkflowAttachmentStatus,
     WorkflowStatus,
     WorkflowStrategy,
@@ -36,6 +40,62 @@ from .constants import (
 
 logger = logging.getLogger(__name__)
 User = get_user_model()
+
+
+def validate_approval_configuration_payload(approval_config, require_approvals=False):
+    """Validate approval config shape used by stages and status transitions."""
+    if not isinstance(approval_config, dict):
+        raise ValidationError(_("approval_config must be a dictionary"))
+
+    approvals = approval_config.get("approvals", [])
+    if require_approvals and not approvals:
+        raise ValidationError(_("approval_config.approvals is required"))
+    if not isinstance(approvals, list):
+        raise ValidationError(_("approval_config.approvals must be a list"))
+
+    valid_approval_types = [choice[0] for choice in ApprovalTypes.choices]
+    valid_step_types = [choice[0] for choice in ApprovalType.choices]
+    valid_role_strategies = [choice[0] for choice in RoleSelectionStrategy.choices]
+
+    for approval in approvals:
+        if not isinstance(approval, dict):
+            raise ValidationError(_("Each approval must be a dictionary"))
+
+        approval_type = approval.get("approval_type")
+        if approval_type not in valid_approval_types:
+            raise ValidationError(
+                _("Invalid approval_type. Must be one of: %(types)s")
+                % {"types": ", ".join(valid_approval_types)}
+            )
+
+        if approval_type == ApprovalTypes.ROLE:
+            if not approval.get("user_role"):
+                raise ValidationError(_("user_role is required for role approval"))
+            strategy = approval.get("role_selection_strategy")
+            if strategy and strategy not in valid_role_strategies:
+                raise ValidationError(
+                    _("Invalid role_selection_strategy. Must be one of: %(strategies)s")
+                    % {"strategies": ", ".join(valid_role_strategies)}
+                )
+        elif approval_type == ApprovalTypes.USER and not approval.get("approval_user"):
+            raise ValidationError(_("approval_user is required for user approval"))
+
+        step_approval_type = approval.get("step_approval_type")
+        if step_approval_type and step_approval_type not in valid_step_types:
+            raise ValidationError(
+                _("Invalid step_approval_type. Must be one of: %(types)s")
+                % {"types": ", ".join(valid_step_types)}
+            )
+        if step_approval_type == ApprovalType.SUBMIT and not approval.get(
+            "required_form"
+        ):
+            raise ValidationError(
+                _("SUBMIT step_approval_type requires a required_form")
+            )
+        if step_approval_type == ApprovalType.MOVE and approval.get("required_form"):
+            raise ValidationError(_("MOVE step_approval_type cannot have a form"))
+
+    return True
 
 
 class BaseCompanyModel(models.Model):
@@ -262,6 +322,27 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
 
             return True, "Strategy 3 workflow is complete and valid"
 
+        # Strategy 4 (Status Graph): Check status nodes and transitions.
+        if self.strategy == WorkflowStrategy.STATUS_GRAPH:
+            status_nodes = list(self.status_nodes.filter(is_active=True))
+            if not status_nodes:
+                return False, "Strategy 4 workflow must have at least one status"
+
+            initial_count = sum(1 for node in status_nodes if node.is_initial)
+            if initial_count != 1:
+                return (
+                    False,
+                    "Strategy 4 workflow must have exactly one initial status",
+                )
+
+            for transition in self.status_transitions.filter(is_active=True):
+                try:
+                    transition.clean()
+                except ValidationError as exc:
+                    return False, str(exc)
+
+            return True, "Strategy 4 workflow is complete and valid"
+
         return False, f"Unknown strategy: {self.strategy}"
 
     def update_active_status(self):
@@ -340,7 +421,6 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
 
             if not pipelines:
                 logger.info("No pipelines to clone")
-                return cloned_workflow
 
             # Prepare all pipelines for bulk creation
             pipelines_to_create = []
@@ -408,6 +488,98 @@ class WorkFlow(CompanyBaseWithNamedModelWithClone):
             if stages_to_create:
                 created_stages = Stage.objects.bulk_create(stages_to_create)
                 logger.info(f"Bulk created {len(created_stages)} stages")
+
+            # Clone status graph nodes and transitions for STATUS_GRAPH workflows.
+            status_node_mapping = {}
+            source_status_nodes = list(self.status_nodes.all())
+            if source_status_nodes:
+                nodes_to_create = []
+                for node in source_status_nodes:
+                    nodes_to_create.append(
+                        WorkflowStatusNode(
+                            workflow=cloned_workflow,
+                            status=node.status,
+                            is_initial=node.is_initial,
+                            is_terminal=node.is_terminal,
+                            order=node.order,
+                            is_active=node.is_active,
+                            metadata=node.metadata.copy() if node.metadata else {},
+                        )
+                    )
+
+                created_nodes = WorkflowStatusNode.objects.bulk_create(nodes_to_create)
+                for idx, source_node in enumerate(source_status_nodes):
+                    status_node_mapping[source_node.id] = created_nodes[idx]
+
+                for source_id, target_node in status_node_mapping.items():
+                    for action in WorkflowAction.objects.filter(
+                        status_node_id=source_id
+                    ):
+                        WorkflowAction.objects.create(
+                            status_node=target_node,
+                            action_type=action.action_type,
+                            function_path=action.function_path,
+                            condition_function=action.condition_function,
+                            failure_policy=action.failure_policy,
+                            is_active=action.is_active,
+                            parameters=(
+                                action.parameters.copy() if action.parameters else {}
+                            ),
+                            order=action.order,
+                        )
+
+                source_transitions = list(
+                    self.status_transitions.select_related(
+                        "from_status", "to_status", "reject_to_status"
+                    ).all()
+                )
+                transition_mapping = {}
+                for transition in source_transitions:
+                    cloned_transition = StatusTransition.objects.create(
+                        workflow=cloned_workflow,
+                        from_status=status_node_mapping[transition.from_status_id],
+                        to_status=status_node_mapping[transition.to_status_id],
+                        key=transition.key,
+                        name_en=transition.name_en,
+                        name_ar=transition.name_ar,
+                        description=transition.description,
+                        requires_approval=transition.requires_approval,
+                        approval_config=(
+                            transition.approval_config.copy()
+                            if transition.approval_config
+                            else {}
+                        ),
+                        reject_behavior=transition.reject_behavior,
+                        reject_to_status=(
+                            status_node_mapping.get(transition.reject_to_status_id)
+                            if transition.reject_to_status_id
+                            else None
+                        ),
+                        permission_codename=transition.permission_codename,
+                        metadata=(
+                            transition.metadata.copy() if transition.metadata else {}
+                        ),
+                        order=transition.order,
+                        is_active=transition.is_active,
+                    )
+                    transition_mapping[transition.id] = cloned_transition
+
+                for source_id, target_transition in transition_mapping.items():
+                    for action in WorkflowAction.objects.filter(
+                        transition_id=source_id
+                    ):
+                        WorkflowAction.objects.create(
+                            transition=target_transition,
+                            action_type=action.action_type,
+                            function_path=action.function_path,
+                            condition_function=action.condition_function,
+                            failure_policy=action.failure_policy,
+                            is_active=action.is_active,
+                            parameters=(
+                                action.parameters.copy() if action.parameters else {}
+                            ),
+                            order=action.order,
+                        )
 
             # Clone workflow actions
             try:
@@ -487,9 +659,6 @@ class Pipeline(CompanyBaseWithNamedModelWithClone):
                 value = getattr(self.department, attr)
                 if value:
                     return value
-
-        # Fallback to string representation
-        return str(self.department)
 
     def save(self, *args, **kwargs):
         """Override save to validate JSON field sizes."""
@@ -736,6 +905,353 @@ class Stage(CompanyBaseWithNamedModelWithClone):
             )
 
 
+class Status(BaseCompanyModel):
+    """
+    Reusable business status definition.
+
+    A status can be used without a workflow. Workflows optionally attach these
+    statuses as nodes and control movement with transitions.
+    """
+
+    key = models.SlugField(
+        max_length=100,
+        blank=True,
+        help_text=_("Stable machine key for this status (e.g., in_progress)"),
+    )
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="statuses",
+        help_text=_(
+            "Optional model type this status belongs to. Leave empty for global reusable statuses."
+        ),
+    )
+    name_en = models.CharField(max_length=150, help_text=_("English name"))
+    name_ar = models.CharField(max_length=150, blank=True, help_text=_("Arabic name"))
+    category = models.CharField(
+        max_length=20,
+        choices=StatusCategory,
+        default=StatusCategory.OTHER,
+        help_text=_("Business category for reporting and behavior"),
+    )
+    color = models.CharField(
+        max_length=20, blank=True, help_text=_("Display color such as #2E74B5")
+    )
+    icon = models.CharField(
+        max_length=100, blank=True, help_text=_("Optional UI icon key")
+    )
+    description = models.TextField(blank=True)
+    metadata = models.JSONField(
+        default=dict,
+        blank=True,
+        help_text=_("Extra flags or UI/business metadata for future use"),
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ("key", "id")
+        verbose_name = _("Status")
+        verbose_name_plural = _("Statuses")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["company", "content_type", "key"],
+                name="status_unique_company_content_type_key",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["key"]),
+            models.Index(fields=["content_type"]),
+            models.Index(fields=["category"]),
+            models.Index(fields=["is_active"]),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self.key:
+            base_key = slugify(self.name_en or self.name_ar or "status").replace(
+                "-", "_"
+            )
+            if not base_key:
+                base_key = "status"
+            candidate = base_key[:100]
+            counter = 2
+            while (
+                Status.objects.filter(
+                    company=self.company,
+                    content_type=self.content_type,
+                    key=candidate,
+                )
+                .exclude(pk=self.pk)
+                .exists()
+            ):
+                suffix = f"_{counter}"
+                candidate = f"{base_key[:100 - len(suffix)]}{suffix}"
+                counter += 1
+            self.key = candidate
+        super().save(*args, **kwargs)
+
+    def __str__(self):
+        return self.name_en or self.key
+
+
+class ModelStatusConfiguration(models.Model):
+    """Status support configuration for a Django model type."""
+
+    content_type = models.OneToOneField(
+        ContentType,
+        on_delete=models.CASCADE,
+        related_name="status_configuration",
+        help_text=_("The model type that can use statuses"),
+    )
+    is_enabled = models.BooleanField(default=True)
+    status_field = models.CharField(
+        max_length=100,
+        blank=True,
+        help_text=_("Optional target model field to sync with current status"),
+    )
+    default_status = models.ForeignKey(
+        Status,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="default_for_model_configurations",
+    )
+    auto_create_attachment = models.BooleanField(default=True)
+    allow_direct_change = models.BooleanField(
+        default=True,
+        help_text=_("Allow direct status changes when no workflow transition is used"),
+    )
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    modified_at = models.DateTimeField(auto_now=True, null=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="model_status_configurations_created",
+    )
+    modified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="model_status_configurations_modified",
+    )
+
+    class Meta:
+        verbose_name = _("Model Status Configuration")
+        verbose_name_plural = _("Model Status Configurations")
+
+    def __str__(self):
+        return (
+            f"Status config for {self.content_type.app_label}.{self.content_type.model}"
+        )
+
+
+class ModelStatus(models.Model):
+    """Allowed status for a specific Django model type."""
+
+    configuration = models.ForeignKey(
+        ModelStatusConfiguration,
+        on_delete=models.CASCADE,
+        related_name="model_statuses",
+    )
+    status = models.ForeignKey(
+        Status, on_delete=models.PROTECT, related_name="model_statuses"
+    )
+    is_initial = models.BooleanField(default=False)
+    is_terminal = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    modified_at = models.DateTimeField(auto_now=True, null=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="model_statuses_created",
+    )
+    modified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="model_statuses_modified",
+    )
+
+    class Meta:
+        ordering = ("order", "id")
+        verbose_name = _("Model Status")
+        verbose_name_plural = _("Model Statuses")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["configuration", "status"],
+                name="model_status_unique_configuration_status",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["configuration", "is_active"]),
+            models.Index(fields=["status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.configuration.content_type}: {self.status}"
+
+
+class WorkflowStatusNode(models.Model):
+    """Status node attached to a workflow for status-graph workflows."""
+
+    workflow = models.ForeignKey(
+        WorkFlow, on_delete=models.CASCADE, related_name="status_nodes"
+    )
+    status = models.ForeignKey(
+        Status, on_delete=models.PROTECT, related_name="workflow_nodes"
+    )
+    is_initial = models.BooleanField(default=False)
+    is_terminal = models.BooleanField(default=False)
+    order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    modified_at = models.DateTimeField(auto_now=True, null=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="workflow_status_nodes_created",
+    )
+    modified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="workflow_status_nodes_modified",
+    )
+
+    class Meta:
+        ordering = ("order", "id")
+        verbose_name = _("Workflow Status")
+        verbose_name_plural = _("Workflow Statuses")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workflow", "status"],
+                name="workflow_status_node_unique_workflow_status",
+            )
+        ]
+        indexes = [
+            models.Index(fields=["workflow", "is_active"]),
+            models.Index(fields=["status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.workflow.name_en}: {self.status.name_en}"
+
+
+class StatusTransition(models.Model):
+    """Allowed movement between two workflow status nodes."""
+
+    workflow = models.ForeignKey(
+        WorkFlow, on_delete=models.CASCADE, related_name="status_transitions"
+    )
+    from_status = models.ForeignKey(
+        WorkflowStatusNode,
+        on_delete=models.CASCADE,
+        related_name="outgoing_transitions",
+    )
+    to_status = models.ForeignKey(
+        WorkflowStatusNode,
+        on_delete=models.CASCADE,
+        related_name="incoming_transitions",
+    )
+    key = models.SlugField(max_length=100)
+    name_en = models.CharField(max_length=150)
+    name_ar = models.CharField(max_length=150, blank=True)
+    description = models.TextField(blank=True)
+    requires_approval = models.BooleanField(default=False)
+    approval_config = models.JSONField(default=dict, blank=True)
+    reject_behavior = models.CharField(
+        max_length=40,
+        choices=TransitionRejectBehavior,
+        default=TransitionRejectBehavior.STAY_CURRENT,
+    )
+    reject_to_status = models.ForeignKey(
+        WorkflowStatusNode,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reject_transitions",
+    )
+    permission_codename = models.CharField(
+        max_length=150,
+        blank=True,
+        help_text=_("Optional permission codename required to perform transition"),
+    )
+    metadata = models.JSONField(default=dict, blank=True)
+    order = models.PositiveIntegerField(default=0)
+    is_active = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    modified_at = models.DateTimeField(auto_now=True, null=True)
+    created_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="status_transitions_created",
+    )
+    modified_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="status_transitions_modified",
+    )
+
+    class Meta:
+        ordering = ("order", "id")
+        verbose_name = _("Status Transition")
+        verbose_name_plural = _("Status Transitions")
+        constraints = [
+            models.UniqueConstraint(
+                fields=["workflow", "key"], name="status_transition_unique_workflow_key"
+            )
+        ]
+        indexes = [
+            models.Index(fields=["workflow", "is_active"]),
+            models.Index(fields=["from_status", "is_active"]),
+            models.Index(fields=["to_status"]),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.from_status_id and self.from_status.workflow_id != self.workflow_id:
+            raise ValidationError(_("from_status must belong to transition workflow"))
+        if self.to_status_id and self.to_status.workflow_id != self.workflow_id:
+            raise ValidationError(_("to_status must belong to transition workflow"))
+        if (
+            self.reject_to_status_id
+            and self.reject_to_status.workflow_id != self.workflow_id
+        ):
+            raise ValidationError(
+                _("reject_to_status must belong to transition workflow")
+            )
+        if (
+            self.reject_behavior == TransitionRejectBehavior.MOVE_TO_STATUS
+            and not self.reject_to_status_id
+        ):
+            raise ValidationError(
+                _("reject_to_status is required when reject_behavior moves to a status")
+            )
+        validate_approval_configuration_payload(
+            self.approval_config or {}, require_approvals=self.requires_approval
+        )
+
+    def __str__(self):
+        return f"{self.name_en}: {self.from_status.status} -> {self.to_status.status}"
+
+
 class WorkflowAttachment(models.Model):
     """
     Generic attachment of workflows to any model instance.
@@ -782,6 +1298,22 @@ class WorkflowAttachment(models.Model):
         default=WorkflowAttachmentStatus.NOT_STARTED,
         help_text=_("Current status of workflow execution"),
     )
+    current_status = models.ForeignKey(
+        Status,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="workflow_attachments",
+        help_text=_("Current business status controlled by status graph workflows"),
+    )
+    pending_transition = models.ForeignKey(
+        StatusTransition,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="pending_attachments",
+        help_text=_("Transition waiting for approval"),
+    )
 
     # Metadata
     started_at = models.DateTimeField(null=True, blank=True)
@@ -810,6 +1342,8 @@ class WorkflowAttachment(models.Model):
             models.Index(fields=["content_type", "object_id"]),
             models.Index(fields=["workflow", "status"]),
             models.Index(fields=["current_stage"]),
+            models.Index(fields=["current_status"]),
+            models.Index(fields=["pending_transition"]),
         ]
 
     def __str__(self):
@@ -1067,11 +1601,112 @@ class WorkflowAttachment(models.Model):
                 self.current_pipeline.name_en if self.current_pipeline else None
             ),
             "status": self.status,
+            "current_status": (
+                self.current_status.name_en if self.current_status else None
+            ),
             "progress_percentage": self.progress_percentage,
             "started_at": self.started_at,
             "completed_at": self.completed_at,
             "next_stage": self.next_stage.name_en if self.next_stage else None,
         }
+
+
+class StatusAttachment(models.Model):
+    """Generic current business status for any model instance."""
+
+    content_type = models.ForeignKey(
+        ContentType,
+        on_delete=models.CASCADE,
+        help_text=_("The model type this status is attached to"),
+    )
+    object_id = models.CharField(
+        max_length=255, help_text=_("The ID of the model instance")
+    )
+    target = GenericForeignKey("content_type", "object_id")
+    status = models.ForeignKey(
+        Status, on_delete=models.PROTECT, related_name="status_attachments"
+    )
+    changed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="changed_status_attachments",
+    )
+    changed_at = models.DateTimeField(auto_now=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, null=True)
+    modified_at = models.DateTimeField(auto_now=True, null=True)
+
+    class Meta:
+        unique_together = [("content_type", "object_id")]
+        indexes = [
+            models.Index(fields=["content_type", "object_id"]),
+            models.Index(fields=["status"]),
+        ]
+
+    def __str__(self):
+        return f"{self.content_type.model}({self.object_id}) -> {self.status}"
+
+
+class StatusHistory(models.Model):
+    """Audit trail for direct and workflow-controlled status changes."""
+
+    content_type = models.ForeignKey(ContentType, on_delete=models.CASCADE)
+    object_id = models.CharField(max_length=255)
+    target = GenericForeignKey("content_type", "object_id")
+    from_status = models.ForeignKey(
+        Status,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="status_history_from",
+    )
+    to_status = models.ForeignKey(
+        Status,
+        on_delete=models.PROTECT,
+        related_name="status_history_to",
+    )
+    workflow = models.ForeignKey(
+        WorkFlow,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="status_history",
+    )
+    transition = models.ForeignKey(
+        StatusTransition,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="history_entries",
+    )
+    changed_by = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="status_history_entries",
+    )
+    reason = models.TextField(blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        verbose_name = _("Status History")
+        verbose_name_plural = _("Status History")
+        indexes = [
+            models.Index(fields=["content_type", "object_id", "created_at"]),
+            models.Index(fields=["workflow"]),
+            models.Index(fields=["transition"]),
+        ]
+
+    def __str__(self):
+        return (
+            f"{self.content_type.model}({self.object_id}): "
+            f"{self.from_status} -> {self.to_status}"
+        )
 
 
 class WorkflowConfiguration(models.Model):
@@ -1174,6 +1809,19 @@ class WorkflowAction(models.Model):
             "Python path to the function to execute (e.g., 'myapp.actions.send_email')"
         ),
     )
+    condition_function = models.CharField(
+        max_length=255,
+        blank=True,
+        help_text=_(
+            "Optional developer function that must return true before this action runs"
+        ),
+    )
+    failure_policy = models.CharField(
+        max_length=20,
+        choices=ActionFailurePolicy.choices,
+        default=ActionFailurePolicy.CONTINUE,
+        help_text=_("Continue, stop remaining actions, or raise when execution fails"),
+    )
     is_active = models.BooleanField(
         default=True, help_text=_("Whether this action is active")
     )
@@ -1203,6 +1851,22 @@ class WorkflowAction(models.Model):
         related_name="actions",
         help_text=_("Stage this action belongs to (stage-level action)"),
     )
+    transition = models.ForeignKey(
+        StatusTransition,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="actions",
+        help_text=_("Status transition this action belongs to"),
+    )
+    status_node = models.ForeignKey(
+        WorkflowStatusNode,
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name="actions",
+        help_text=_("Workflow status node this action belongs to"),
+    )
 
     # Additional configuration
     parameters = models.JSONField(
@@ -1227,20 +1891,46 @@ class WorkflowAction(models.Model):
             models.Index(fields=["workflow", "action_type"]),
             models.Index(fields=["pipeline", "action_type"]),
             models.Index(fields=["stage", "action_type"]),
+            models.Index(fields=["transition", "action_type"]),
+            models.Index(fields=["status_node", "action_type"]),
         ]
         constraints = [
             models.CheckConstraint(
                 condition=(
-                    Q(workflow__isnull=False, pipeline__isnull=True, stage__isnull=True)
+                    Q(
+                        workflow__isnull=False,
+                        pipeline__isnull=True,
+                        stage__isnull=True,
+                        transition__isnull=True,
+                        status_node__isnull=True,
+                    )
                     | Q(
                         workflow__isnull=True,
                         pipeline__isnull=False,
                         stage__isnull=True,
+                        transition__isnull=True,
+                        status_node__isnull=True,
                     )
                     | Q(
                         workflow__isnull=True,
                         pipeline__isnull=True,
                         stage__isnull=False,
+                        transition__isnull=True,
+                        status_node__isnull=True,
+                    )
+                    | Q(
+                        workflow__isnull=True,
+                        pipeline__isnull=True,
+                        stage__isnull=True,
+                        transition__isnull=False,
+                        status_node__isnull=True,
+                    )
+                    | Q(
+                        workflow__isnull=True,
+                        pipeline__isnull=True,
+                        stage__isnull=True,
+                        transition__isnull=True,
+                        status_node__isnull=False,
                     )
                 ),
                 name="workflow_action_single_scope",
@@ -1255,16 +1945,29 @@ class WorkflowAction(models.Model):
             scope = f"Pipeline: {self.pipeline.name_en}"
         elif self.workflow:
             scope = f"Workflow: {self.workflow.name_en}"
+        elif self.transition:
+            scope = f"Transition: {self.transition.name_en}"
+        elif self.status_node:
+            scope = f"Status: {self.status_node.status.name_en}"
 
         return f"{self.get_action_type_display()} - {scope} - {self.function_path}"
 
     def clean(self):
         """Validate that exactly one scope is set."""
-        scope_count = sum([bool(self.workflow), bool(self.pipeline), bool(self.stage)])
+        scope_count = sum(
+            [
+                bool(self.workflow),
+                bool(self.pipeline),
+                bool(self.stage),
+                bool(self.transition),
+                bool(self.status_node),
+            ]
+        )
 
         if scope_count != 1:
             raise ValidationError(
-                "Exactly one of workflow, pipeline, or stage must be set."
+                "Exactly one of workflow, pipeline, or stage must be set. "
+                "Transition and status_node are also supported as single scopes."
             )
 
     @property
@@ -1276,6 +1979,10 @@ class WorkflowAction(models.Model):
             return "pipeline"
         elif self.workflow:
             return "workflow"
+        elif self.transition:
+            return "transition"
+        elif self.status_node:
+            return "status_node"
         return "default"
 
     @property
@@ -1287,4 +1994,8 @@ class WorkflowAction(models.Model):
             return self.pipeline
         elif self.workflow:
             return self.workflow
+        elif self.transition:
+            return self.transition
+        elif self.status_node:
+            return self.status_node
         return None

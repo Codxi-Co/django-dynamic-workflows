@@ -1,9 +1,78 @@
 # Changelog
 
+- Added full-design and REST support for transition actions, action conditions,
+  failure policies, custom transition validators, consistent status-entry
+  actions, and atomic status transitions.
+- Added settings-driven, idempotent default status workflow provisioning per
+  company and model, including direct full-flow settings,
+  `auto_generate_default_flow(company_id, flow=None)`, and lazy object
+  attachment helpers.
+
 All notable changes to django-dynamic-workflows will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.8.0] - 2026-06-18
+
+### Added
+
+- Business status workflow system powered by `WorkflowStrategy.STATUS_GRAPH`
+- Reusable `Status` model with company scope, model `ContentType` scope, Arabic/English names, category, metadata, and audit fields
+- Model-specific status catalogs through `ModelStatusConfiguration` and `ModelStatus`
+- Workflow status graph nodes through `WorkflowStatusNode`
+- Status graph transitions through `StatusTransition`
+- Status attachment and history tracking for arbitrary Django models
+- Transition approval support using the existing approval workflow values and `ApprovalFlow` / `ApprovalInstance` rows
+- Form-based transition approvals through `step_approval_type` and `required_form`
+- Rejection behavior controls for pending status transitions
+- Transition action hooks: `BEFORE_TRANSITION`, `AFTER_TRANSITION`, `ON_TRANSITION_APPROVAL_REQUESTED`, `ON_TRANSITION_APPROVED`, `ON_TRANSITION_REJECTED`
+- Transition actor rules through `metadata.allowed_actors` for creator, assigned user, managers, team/department resolvers, specific users, roles, assignment history, and custom functions
+- Status-enter actions through `WorkflowAction.status_node` and `ActionType.ON_STATUS_ENTER`, allowing SLA timers, reminders, notifications, and other custom functions to run when an object enters a status
+- Helper services in `django_workflow_engine.status_services`:
+  - `create_status_for_model()`
+  - `create_status_flow_design()`
+  - `get_status_flow_design()`
+  - `resolve_status_content_type()`
+  - `auto_generate_default_flow()`
+- Status REST API module under `/status/`
+- Full status-flow API:
+  - `POST /status/flow/`
+  - `GET /status/flow/<app_label.model>/`
+- Frontend helper APIs:
+  - `GET /status/models/`
+  - `GET /status/options/<app_label.model>/`
+  - `GET /status/transitions/<app_label.model>/`
+- Settings-based extension points for packaged status APIs:
+  - `STATUS_API_VIEWSET_MIXINS`
+  - `STATUS_BASE_SERIALIZER`
+  - `STATUS_NAMED_SERIALIZER`
+- Business status workflow documentation covering `WorkflowStrategy.STATUS_GRAPH`
+- `STATUS_WORKFLOWS_GUIDE.md` with full examples for Tickets, Opportunities, helpers, REST APIs, approvals, forms, rejection behavior, and frontend diagram payloads
+- README strategy overview updated to include `STATUS_GRAPH`
+- README quick references for status flow APIs and helper services
+- README settings examples for status API viewset and serializer customization
+
+### Changed
+
+- Status transition APIs now expose `approvals` as the public contract and infer approval requirement from whether approvals are present
+- `approval_config` and `requires_approval` remain accepted as write-only compatibility inputs for low-level transition APIs
+- `WorkFlow.validate_completeness()` now validates status graph workflows
+- Workflow cloning now includes status graph nodes, transitions, and transition actions
+- Full status-flow creation can create status-node actions inline through each status `actions` list
+- Status flow API logic moved into reusable service helpers so projects can build custom APIs around the same behavior
+- Package metadata updated for version `1.8.0`
+
+### Migration
+
+- Added migration for status workflow models, status model scoping, status metadata, and audit fields:
+  - `0008_status_workflows.py`
+
+### Backward Compatibility
+
+- Existing pipeline/stage/workflow-only strategies remain supported.
+- Existing workflow APIs remain available.
+- Low-level transition APIs still accept legacy approval payload keys as write-only compatibility inputs.
 
 ## [1.7.0] - 2026-05-26
 

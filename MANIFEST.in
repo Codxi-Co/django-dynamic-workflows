@@ -1,7 +1,10 @@
 # Include important documentation files
 include README.md
 include CHANGELOG.md
-include TRANSLATIONS.md
+include STATUS_WORKFLOWS_GUIDE.md
+include STATUS_WORKFLOW_IMPLEMENTATION_CASES.md
+include STATUS_WORKFLOW_API_GUIDE.md
+include RELEASE_NOTES_1.8.0.md
 include LICENSE
 include requirements.txt
 include requirements-dev.txt
@@ -15,7 +18,6 @@ recursive-include django_workflow_engine/locale *.po *.mo
 
 # Include templates and static files (if any)
 recursive-include django_workflow_engine/templates *
-recursive-include django_workflow_engine/static *
 
 # Include management commands
 recursive-include django_workflow_engine/management *

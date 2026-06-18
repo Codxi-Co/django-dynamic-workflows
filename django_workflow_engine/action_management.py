@@ -4,7 +4,14 @@ import logging
 from typing import Dict, List, Optional
 
 from .choices import ActionType
-from .models import Pipeline, Stage, WorkFlow, WorkflowAction
+from .models import (
+    Pipeline,
+    Stage,
+    StatusTransition,
+    WorkFlow,
+    WorkflowAction,
+    WorkflowStatusNode,
+)
 from .settings import get_actions_config_for_model
 
 logger = logging.getLogger(__name__)
@@ -15,6 +22,8 @@ def create_custom_workflow_actions(
     workflow: Optional[WorkFlow] = None,
     pipeline: Optional[Pipeline] = None,
     stage: Optional[Stage] = None,
+    transition: Optional[StatusTransition] = None,
+    status_node: Optional[WorkflowStatusNode] = None,
 ) -> List[WorkflowAction]:
     """
     Create custom workflow actions from provided data.
@@ -46,14 +55,50 @@ def create_custom_workflow_actions(
     created_actions = []
 
     # Determine scope
-    if stage:
-        scope_kwargs = {"stage": stage, "workflow": None, "pipeline": None}
+    if status_node:
+        scope_kwargs = {
+            "status_node": status_node,
+            "transition": None,
+            "stage": None,
+            "workflow": None,
+            "pipeline": None,
+        }
+        scope_name = f"status {status_node.status.name_en}"
+    elif transition:
+        scope_kwargs = {
+            "transition": transition,
+            "status_node": None,
+            "stage": None,
+            "workflow": None,
+            "pipeline": None,
+        }
+        scope_name = f"transition {transition.name_en}"
+    elif stage:
+        scope_kwargs = {
+            "stage": stage,
+            "transition": None,
+            "status_node": None,
+            "workflow": None,
+            "pipeline": None,
+        }
         scope_name = f"stage {stage.name_en}"
     elif pipeline:
-        scope_kwargs = {"pipeline": pipeline, "workflow": None, "stage": None}
+        scope_kwargs = {
+            "pipeline": pipeline,
+            "transition": None,
+            "status_node": None,
+            "workflow": None,
+            "stage": None,
+        }
         scope_name = f"pipeline {pipeline.name_en}"
     elif workflow:
-        scope_kwargs = {"workflow": workflow, "pipeline": None, "stage": None}
+        scope_kwargs = {
+            "workflow": workflow,
+            "transition": None,
+            "status_node": None,
+            "pipeline": None,
+            "stage": None,
+        }
         scope_name = f"workflow {workflow.name_en}"
     else:
         logger.error("No scope provided for creating custom actions")
@@ -61,10 +106,17 @@ def create_custom_workflow_actions(
 
     for action_data in actions_data:
         try:
+            action_type = action_data.get("action_type")
+            if not action_type and status_node:
+                action_type = ActionType.ON_STATUS_ENTER
+            if not action_type and transition:
+                action_type = ActionType.AFTER_TRANSITION
             action = WorkflowAction.objects.create(
                 **scope_kwargs,
-                action_type=action_data.get("action_type"),
+                action_type=action_type,
                 function_path=action_data.get("function_path"),
+                condition_function=action_data.get("condition_function", ""),
+                failure_policy=action_data.get("failure_policy", "continue"),
                 is_active=action_data.get("is_active", True),
                 parameters=action_data.get("parameters", {}),
                 order=action_data.get("order", 1),
@@ -264,6 +316,8 @@ def clone_workflow_actions(
                 stage=None,
                 action_type=action.action_type,
                 function_path=action.function_path,
+                condition_function=action.condition_function,
+                failure_policy=action.failure_policy,
                 is_active=action.is_active,
                 parameters=action.parameters.copy() if action.parameters else {},
                 order=action.order,
@@ -292,6 +346,8 @@ def clone_workflow_actions(
                         stage=None,
                         action_type=action.action_type,
                         function_path=action.function_path,
+                        condition_function=action.condition_function,
+                        failure_policy=action.failure_policy,
                         is_active=action.is_active,
                         parameters=(
                             action.parameters.copy() if action.parameters else {}
@@ -323,6 +379,8 @@ def clone_workflow_actions(
                             stage=target_stage,
                             action_type=action.action_type,
                             function_path=action.function_path,
+                            condition_function=action.condition_function,
+                            failure_policy=action.failure_policy,
                             is_active=action.is_active,
                             parameters=(
                                 action.parameters.copy() if action.parameters else {}

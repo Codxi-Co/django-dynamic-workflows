@@ -31,6 +31,7 @@ class WorkflowStrategy(models.IntegerChoices):
     WORKFLOW_ONLY = 3, _(
         "Workflow Only - Approvals at workflow level (no pipelines/stages)"
     )
+    STATUS_GRAPH = 4, _("Status Graph - Transitions between workflow statuses")
 
 
 class ApprovalTypes(models.TextChoices):
@@ -64,6 +65,43 @@ class ActionType(models.TextChoices):
     AFTER_MOVE_PIPELINE = "after_move_pipeline", "After Move Pipeline"
     ON_WORKFLOW_START = "on_workflow_start", "On Workflow Start"
     ON_WORKFLOW_COMPLETE = "on_workflow_complete", "On Workflow Complete"
+    BEFORE_TRANSITION = "before_transition", "Before Status Transition"
+    AFTER_TRANSITION = "after_transition", "After Status Transition"
+    ON_TRANSITION_APPROVAL_REQUESTED = (
+        "on_transition_approval_requested",
+        "On Transition Approval Requested",
+    )
+    ON_TRANSITION_APPROVED = "on_transition_approved", "On Transition Approved"
+    ON_TRANSITION_REJECTED = "on_transition_rejected", "On Transition Rejected"
+    ON_STATUS_ENTER = "on_status_enter", "On Status Enter"
+
+
+class ActionFailurePolicy(models.TextChoices):
+    """How workflow execution proceeds when a custom action raises an error."""
+
+    CONTINUE = "continue", _("Continue")
+    STOP = "stop", _("Stop Remaining Actions")
+    RAISE = "raise", _("Raise Error")
+
+
+class StatusCategory(models.TextChoices):
+    """Business category for reusable statuses."""
+
+    OPEN = "open", _("Open")
+    ACTIVE = "active", _("Active")
+    PAUSED = "paused", _("Paused")
+    DONE = "done", _("Done")
+    CANCELLED = "cancelled", _("Cancelled")
+    OTHER = "other", _("Other")
+
+
+class TransitionRejectBehavior(models.TextChoices):
+    """What happens when a transition approval is rejected."""
+
+    STAY_CURRENT = "stay_current_status", _("Stay in Current Status")
+    MOVE_TO_STATUS = "move_to_specific_status", _("Move to Specific Status")
+    REQUEST_CHANGES = "request_changes", _("Request Changes")
+    CANCEL_WORKFLOW = "cancel_workflow", _("Cancel Workflow")
 
 
 # Default action functions mapping

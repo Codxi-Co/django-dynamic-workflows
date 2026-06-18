@@ -3,6 +3,7 @@
 import logging
 from typing import Any, Dict, List, Optional, Union
 
+from django.contrib.contenttypes.models import ContentType
 from django.db import transaction
 from django.utils.translation import gettext_lazy as _
 
@@ -12,12 +13,32 @@ from approval_workflow.services import advance_flow, get_current_approval_for_ob
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from .choices import ActionType, ApprovalTypes
+from .choices import ActionFailurePolicy, ActionType, ApprovalTypes
 from .logging_utils import log_serializer_validation, serializers_logger
-from .models import Pipeline, Stage, WorkFlow, WorkflowAttachment
+from .models import (
+    ModelStatus,
+    ModelStatusConfiguration,
+    Pipeline,
+    Stage,
+    Status,
+    StatusAttachment,
+    StatusHistory,
+    StatusTransition,
+    WorkFlow,
+    WorkflowAction,
+    WorkflowAttachment,
+    WorkflowStatusNode,
+    validate_approval_configuration_payload,
+)
 from .services import create_workflow, get_workflow_attachment
+from .settings import (
+    get_status_base_serializer_class,
+    get_status_named_serializer_class,
+)
 
 logger = logging.getLogger(__name__)
+StatusBaseSerializer = get_status_base_serializer_class()
+StatusNamedSerializer = get_status_named_serializer_class()
 
 
 class GenericForeignKeyField(serializers.Field):
@@ -65,6 +86,18 @@ class WorkflowActionInputSerializer(serializers.Serializer):
         help_text=_(
             "Dotted path to the action handler function (e.g., 'myapp.actions.send_email')"
         ),
+    )
+    condition_function = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text=_("Optional developer function that decides whether the action runs"),
+    )
+    failure_policy = serializers.ChoiceField(
+        choices=ActionFailurePolicy,
+        required=False,
+        default=ActionFailurePolicy.CONTINUE,
+        help_text=_("Behavior when the action raises an error"),
     )
     parameters = serializers.JSONField(
         required=False,
@@ -663,6 +696,11 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             logger.warning("No workflow attachment found - skipping update")
             return
 
+        from .choices import WorkflowStrategy
+
+        if attachment.workflow.strategy == WorkflowStrategy.STATUS_GRAPH:
+            return
+
         if action == ApprovalStatus.REJECTED:
             # Get location based on strategy for logging
             from .utils import get_workflow_location_string
@@ -718,6 +756,8 @@ class WorkflowAttachmentSerializer(serializers.ModelSerializer):
             "object_id",
             "current_stage",
             "current_pipeline",
+            "current_status",
+            "pending_transition",
             "status",
             "started_at",
             "completed_at",
@@ -744,6 +784,340 @@ class WorkflowAttachmentSerializer(serializers.ModelSerializer):
     def get_target_object_repr(self, obj):
         """Get string representation of target object."""
         return str(obj.target) if obj.target else None
+
+
+class StatusSerializer(StatusNamedSerializer):
+    """Serializer for reusable business statuses."""
+
+    key = serializers.SlugField(required=False, allow_blank=True)
+    model = serializers.CharField(required=False, write_only=True)
+    model_label = serializers.SerializerMethodField(read_only=True)
+
+    class Meta:
+        model = Status
+        fields = [
+            "id",
+            "key",
+            "content_type",
+            "model",
+            "model_label",
+            "name_en",
+            "name_ar",
+            "category",
+            "color",
+            "icon",
+            "description",
+            "metadata",
+            "is_active",
+            "company",
+            "created_by",
+            "modified_by",
+            "created_at",
+            "modified_at",
+        ]
+        read_only_fields = ["created_at", "modified_at"]
+        validators = []
+
+    @extend_schema_field(serializers.CharField)
+    def get_model_label(self, obj):
+        if not obj.content_type_id:
+            return None
+        return f"{obj.content_type.app_label}.{obj.content_type.model}"
+
+    def validate(self, attrs):
+        model_label = attrs.pop("model", None)
+        if not model_label:
+            return attrs
+
+        try:
+            app_label, model_name = model_label.split(".", 1)
+            content_type = ContentType.objects.get(
+                app_label=app_label, model=model_name.lower()
+            )
+        except (ValueError, ContentType.DoesNotExist):
+            raise serializers.ValidationError(
+                {"model": "Invalid model. Use app_label.model_name."}
+            )
+
+        if attrs.get("content_type") and attrs["content_type"] != content_type:
+            raise serializers.ValidationError(
+                {"model": "model and content_type point to different models."}
+            )
+
+        attrs["content_type"] = content_type
+        return attrs
+
+
+class ModelStatusSerializer(StatusBaseSerializer):
+    status_detail = StatusSerializer(source="status", read_only=True)
+
+    class Meta:
+        model = ModelStatus
+        fields = [
+            "id",
+            "configuration",
+            "status",
+            "status_detail",
+            "is_initial",
+            "is_terminal",
+            "order",
+            "is_active",
+            "created_by",
+            "modified_by",
+            "created_at",
+            "modified_at",
+        ]
+        read_only_fields = ["created_at", "modified_at"]
+
+
+class ModelStatusConfigurationSerializer(StatusBaseSerializer):
+    model_statuses = ModelStatusSerializer(many=True, read_only=True)
+
+    class Meta:
+        model = ModelStatusConfiguration
+        fields = [
+            "id",
+            "content_type",
+            "is_enabled",
+            "status_field",
+            "default_status",
+            "auto_create_attachment",
+            "allow_direct_change",
+            "model_statuses",
+            "created_by",
+            "modified_by",
+            "created_at",
+            "modified_at",
+        ]
+        read_only_fields = ["created_at", "modified_at"]
+
+
+class StatusAttachmentSerializer(StatusBaseSerializer):
+    status_detail = StatusSerializer(source="status", read_only=True)
+    target_object_repr = serializers.SerializerMethodField()
+
+    class Meta:
+        model = StatusAttachment
+        fields = [
+            "id",
+            "content_type",
+            "object_id",
+            "target_object_repr",
+            "status",
+            "status_detail",
+            "changed_by",
+            "changed_at",
+            "metadata",
+        ]
+        read_only_fields = ["changed_at", "target_object_repr"]
+
+    @extend_schema_field(serializers.CharField)
+    def get_target_object_repr(self, obj):
+        return str(obj.target) if obj.target else None
+
+
+class StatusHistorySerializer(StatusBaseSerializer):
+    from_status_detail = StatusSerializer(source="from_status", read_only=True)
+    to_status_detail = StatusSerializer(source="to_status", read_only=True)
+
+    class Meta:
+        model = StatusHistory
+        fields = [
+            "id",
+            "content_type",
+            "object_id",
+            "from_status",
+            "from_status_detail",
+            "to_status",
+            "to_status_detail",
+            "workflow",
+            "transition",
+            "changed_by",
+            "reason",
+            "metadata",
+            "created_at",
+        ]
+        read_only_fields = ["created_at"]
+
+
+class WorkflowStatusNodeSerializer(StatusBaseSerializer):
+    status_detail = StatusSerializer(source="status", read_only=True)
+
+    class Meta:
+        model = WorkflowStatusNode
+        fields = [
+            "id",
+            "workflow",
+            "status",
+            "status_detail",
+            "is_initial",
+            "is_terminal",
+            "order",
+            "is_active",
+            "metadata",
+            "created_by",
+            "modified_by",
+            "created_at",
+            "modified_at",
+        ]
+        read_only_fields = ["created_at", "modified_at"]
+
+
+class StatusActionSerializer(StatusBaseSerializer):
+    """Serializer for actions attached to status nodes or transitions."""
+
+    class Meta:
+        model = WorkflowAction
+        fields = [
+            "id",
+            "status_node",
+            "transition",
+            "action_type",
+            "function_path",
+            "condition_function",
+            "failure_policy",
+            "parameters",
+            "order",
+            "is_active",
+            "created_at",
+            "modified_at",
+        ]
+        read_only_fields = ["created_at", "modified_at"]
+
+    def validate(self, attrs):
+        attrs = super().validate(attrs)
+        status_node = attrs.get(
+            "status_node", getattr(self.instance, "status_node", None)
+        )
+        transition = attrs.get("transition", getattr(self.instance, "transition", None))
+        if bool(status_node) == bool(transition):
+            raise serializers.ValidationError(
+                "Set exactly one of status_node or transition."
+            )
+
+        action_type = attrs.get(
+            "action_type", getattr(self.instance, "action_type", None)
+        )
+        transition_action_types = {
+            ActionType.BEFORE_TRANSITION,
+            ActionType.AFTER_TRANSITION,
+            ActionType.ON_TRANSITION_APPROVAL_REQUESTED,
+            ActionType.ON_TRANSITION_APPROVED,
+            ActionType.ON_TRANSITION_REJECTED,
+        }
+        if status_node and action_type != ActionType.ON_STATUS_ENTER:
+            raise serializers.ValidationError(
+                {
+                    "action_type": (
+                        "Status actions currently support only "
+                        f"{ActionType.ON_STATUS_ENTER}."
+                    )
+                }
+            )
+        if transition and action_type not in transition_action_types:
+            raise serializers.ValidationError(
+                {
+                    "action_type": (
+                        "Transition actions must use a transition lifecycle event."
+                    )
+                }
+            )
+        attrs["workflow"] = None
+        attrs["pipeline"] = None
+        attrs["stage"] = None
+        return attrs
+
+
+class StatusTransitionSerializer(StatusNamedSerializer):
+    from_status_detail = WorkflowStatusNodeSerializer(
+        source="from_status", read_only=True
+    )
+    to_status_detail = WorkflowStatusNodeSerializer(source="to_status", read_only=True)
+    approvals = serializers.JSONField(required=False, allow_null=True)
+    approval_config = serializers.JSONField(
+        required=False, write_only=True, allow_null=True
+    )
+    requires_approval = serializers.BooleanField(required=False, write_only=True)
+
+    class Meta:
+        model = StatusTransition
+        fields = [
+            "id",
+            "workflow",
+            "key",
+            "name_en",
+            "name_ar",
+            "description",
+            "from_status",
+            "from_status_detail",
+            "to_status",
+            "to_status_detail",
+            "approvals",
+            "approval_config",
+            "requires_approval",
+            "reject_behavior",
+            "reject_to_status",
+            "permission_codename",
+            "metadata",
+            "order",
+            "is_active",
+            "created_by",
+            "modified_by",
+            "created_at",
+            "modified_at",
+        ]
+        read_only_fields = ["created_at", "modified_at"]
+
+    def validate(self, attrs):
+        approvals = attrs.pop("approvals", None)
+        approval_config = attrs.pop("approval_config", None)
+        attrs.pop("requires_approval", None)
+        if approvals is None:
+            if approval_config is None and self.instance:
+                approval_config = self.instance.approval_config
+            approvals = (approval_config or {}).get("approvals", [])
+        approvals = approvals or []
+        requires_approval = bool(approvals)
+        approval_config = {"approvals": approvals}
+        try:
+            validate_approval_configuration_payload(
+                approval_config, require_approvals=requires_approval
+            )
+        except Exception as exc:
+            raise serializers.ValidationError({"approvals": str(exc)})
+        attrs["requires_approval"] = requires_approval
+        attrs["approval_config"] = approval_config
+        return attrs
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        data["approvals"] = (instance.approval_config or {}).get("approvals", [])
+        return data
+
+
+class SetStatusSerializer(serializers.Serializer):
+    """Input serializer for setting an object's status directly."""
+
+    status_id = serializers.IntegerField()
+    reason = serializers.CharField(required=False, allow_blank=True)
+    metadata = serializers.JSONField(required=False, default=dict)
+
+
+class PerformTransitionSerializer(serializers.Serializer):
+    """Input serializer for performing a status transition."""
+
+    transition_key = serializers.CharField()
+    reason = serializers.CharField(required=False, allow_blank=True)
+    metadata = serializers.JSONField(required=False, default=dict)
+
+
+class RejectTransitionSerializer(serializers.Serializer):
+    """Input serializer for rejecting a pending status transition."""
+
+    reason = serializers.CharField(required=False, allow_blank=True)
+    evidence = serializers.CharField(required=False, allow_blank=True)
+    metadata = serializers.JSONField(required=False, default=dict)
+    reject_to_status_id = serializers.IntegerField(required=False)
 
 
 class StageDetailSerializer(serializers.ModelSerializer):
