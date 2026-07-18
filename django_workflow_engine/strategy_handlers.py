@@ -190,7 +190,10 @@ class WorkflowPipelineStageHandler(StrategyHandler):
             return []
 
         return build_approval_steps(
-            self.attachment.current_stage, approval_user, start_step
+            self.attachment.current_stage,
+            approval_user,
+            start_step,
+            obj=self.attachment.target,
         )
 
     def _get_pipelines(self):
@@ -287,6 +290,7 @@ class WorkflowPipelineHandler(StrategyHandler):
             approval_user=approval_user,
             extra_fields={"pipeline_id": self.attachment.current_pipeline.id},
             start_step=start_step,
+            obj=self.attachment.target,
         )
 
     def _get_pipelines(self):
@@ -340,6 +344,7 @@ class WorkflowOnlyHandler(StrategyHandler):
             approval_user=approval_user,
             extra_fields={"workflow_id": self.workflow.id},
             start_step=start_step,
+            obj=self.attachment.target,
         )
 
 

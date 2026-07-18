@@ -42,6 +42,7 @@ class ApprovalTypes(models.TextChoices):
     USER = "user", _("User")
     TEAM_HEAD = "team_head", _("Team Head")
     DEPARTMENT_HEAD = "department_head", _("Department Head")
+    ASSIGNED = "assigned", _("Assigned User")
 
 
 class WorkflowAttachmentStatus(models.TextChoices):

@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 from django.contrib.auth import get_user_model
 from django.test import TestCase, override_settings
 
+from django_workflow_engine.action_registry import ActionExecutionError
 from django_workflow_engine.choices import (
     ActionFailurePolicy,
     ActionType,
@@ -19,8 +20,11 @@ from django_workflow_engine.models import (
     WorkflowConfiguration,
 )
 from django_workflow_engine.services import (
+    _build_detailed_workflow_dict,
     _complete_transition,
+    _execute_action_function_legacy,
     _execute_configured_actions,
+    _get_model_status_config,
     _run_status_entry_actions,
     _sync_object_status_field,
     _validate_status_allowed_for_object,
@@ -174,7 +178,7 @@ class RemainingServiceCoverageTest(TestCase):
         )
         attachment.workflow = workflow
         manager = MagicMock()
-        manager.get.return_value = attachment
+        manager.prefetch_related.return_value.get.return_value = attachment
         workflow.pipelines.order_by.return_value.first.return_value = None
         with patch(
             "django_workflow_engine.services.WorkflowAttachment.objects.select_related",
@@ -416,6 +420,250 @@ class RemainingServiceCoverageTest(TestCase):
                     ),
                 ):
                     self.assertIsNone(get_auto_start_workflow_for_object(self.obj))
+
+    def test_remaining_status_and_workflow_start_paths(self):
+        self.assertIsNone(_get_model_status_config(self.obj))
+
+        workflow = MagicMock(
+            strategy=WorkflowStrategy.WORKFLOW_ONLY,
+            name_en="Workflow only",
+            workflow_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.pk}]
+            },
+        )
+        attachment = MagicMock(
+            status=WorkflowAttachmentStatus.NOT_STARTED,
+            workflow=workflow,
+        )
+        manager = MagicMock()
+        manager.prefetch_related.return_value.get.return_value = attachment
+        with (
+            patch(
+                "django_workflow_engine.services.WorkflowAttachment.objects.select_related",
+                return_value=manager,
+            ),
+            patch("approval_workflow.services.start_flow") as start_flow,
+            patch("django_workflow_engine.services.trigger_workflow_event"),
+        ):
+            result = start_workflow_for_object(self.obj, self.user)
+        self.assertIs(result, attachment)
+        start_flow.assert_called_once()
+
+    def test_move_paths_without_or_missing_approval_flows(self):
+        pipeline = SimpleNamespace(id=1, name_en="Pipeline")
+        next_stage = SimpleNamespace(id=2, name_en="Next", pipeline=pipeline)
+        attachment = MagicMock(
+            status=WorkflowAttachmentStatus.IN_PROGRESS,
+            workflow=SimpleNamespace(strategy=WorkflowStrategy.WORKFLOW_PIPELINE_STAGE),
+            next_stage=next_stage,
+            current_stage=SimpleNamespace(name_en="Current"),
+            current_pipeline=pipeline,
+        )
+        with (
+            patch(
+                "django_workflow_engine.services.WorkflowAttachment.objects.get",
+                return_value=attachment,
+            ),
+            patch("django_workflow_engine.utils.build_approval_steps", return_value=[]),
+            patch("django_workflow_engine.services.trigger_workflow_event"),
+        ):
+            self.assertIs(move_to_next_stage(self.obj, self.user), attachment)
+
+        current_pipeline = SimpleNamespace(id=1, name_en="First")
+        next_pipeline = SimpleNamespace(
+            id=2,
+            name_en="Second",
+            pipeline_info={
+                "approvals": [{"approval_type": "user", "approval_user": self.user.pk}]
+            },
+        )
+        attachment = MagicMock(
+            status=WorkflowAttachmentStatus.IN_PROGRESS,
+            workflow=SimpleNamespace(strategy=WorkflowStrategy.WORKFLOW_PIPELINE),
+            next_stage=next_pipeline,
+            current_pipeline=current_pipeline,
+        )
+        with (
+            patch(
+                "django_workflow_engine.services.WorkflowAttachment.objects.get",
+                return_value=attachment,
+            ),
+            patch(
+                "approval_workflow.models.ApprovalFlow.objects.get",
+                side_effect=__import__(
+                    "approval_workflow.models", fromlist=["ApprovalFlow"]
+                ).ApprovalFlow.DoesNotExist,
+            ),
+            patch("django_workflow_engine.services.trigger_workflow_event"),
+        ):
+            self.assertIs(move_to_next_stage(self.obj, self.user), attachment)
+
+        next_pipeline.pipeline_info = {"approvals": []}
+        with (
+            patch(
+                "django_workflow_engine.services.WorkflowAttachment.objects.get",
+                return_value=attachment,
+            ),
+            patch("django_workflow_engine.services.trigger_workflow_event"),
+        ):
+            self.assertIs(move_to_next_stage(self.obj, self.user), attachment)
+
+    def test_reject_complete_status_value_updates(self):
+        attachment = MagicMock(metadata={})
+        rejection_config = SimpleNamespace(rejection_status_value="rejected")
+        completion_config = SimpleNamespace(completion_status_value="completed")
+        with (
+            patch(
+                "django_workflow_engine.services.WorkflowAttachment.objects.get",
+                return_value=attachment,
+            ),
+            patch(
+                "django_workflow_engine.services.WorkflowConfiguration.objects.get",
+                return_value=rejection_config,
+            ),
+            patch("django_workflow_engine.services.update_object_status") as update,
+            patch("django_workflow_engine.services.trigger_workflow_event"),
+        ):
+            reject_workflow_stage(self.obj, SimpleNamespace(name_en="Stage"))
+        update.assert_called_once_with(self.obj, "rejected", "rejection")
+
+        with (
+            patch(
+                "django_workflow_engine.services.WorkflowAttachment.objects.get",
+                return_value=attachment,
+            ),
+            patch(
+                "django_workflow_engine.services.WorkflowConfiguration.objects.get",
+                return_value=completion_config,
+            ),
+            patch("django_workflow_engine.services.update_object_status") as update,
+            patch("django_workflow_engine.services.trigger_workflow_event"),
+        ):
+            complete_workflow(self.obj, self.user)
+        update.assert_called_once_with(self.obj, "completed", "completion")
+
+    def test_transition_empty_permission_and_post_lock_paths(self):
+        attachment = SimpleNamespace(
+            workflow=SimpleNamespace(strategy=WorkflowStrategy.STATUS_GRAPH),
+            current_status=None,
+        )
+        with (
+            patch(
+                "django_workflow_engine.services.get_workflow_attachment",
+                return_value=attachment,
+            ),
+            patch(
+                "django_workflow_engine.services.get_current_status", return_value=None
+            ),
+        ):
+            self.assertEqual(get_available_transitions(self.obj, self.user), [])
+
+        transition = SimpleNamespace(permission_codename="workflow.transition")
+        transitions = MagicMock()
+        transitions.filter.return_value.order_by.return_value = [transition]
+        attachment.current_status = object()
+        with (
+            patch(
+                "django_workflow_engine.services.get_workflow_attachment",
+                return_value=attachment,
+            ),
+            patch(
+                "django_workflow_engine.services.StatusTransition.objects.select_related",
+                return_value=transitions,
+            ),
+        ):
+            self.assertEqual(get_available_transitions(self.obj, None), [])
+
+        initial = SimpleNamespace(pending_transition=object(), pk=1)
+        locked = SimpleNamespace(pending_transition=None)
+        manager = MagicMock()
+        manager.select_related.return_value.get.return_value = locked
+        for operation in (approve_pending_transition, reject_pending_transition):
+            with self.subTest(operation=operation.__name__):
+                with (
+                    patch(
+                        "django_workflow_engine.services.get_workflow_attachment",
+                        return_value=initial,
+                    ),
+                    patch(
+                        "django_workflow_engine.services.WorkflowAttachment.objects.select_for_update",
+                        return_value=manager,
+                    ),
+                ):
+                    with self.assertRaises(ValueError):
+                        operation(self.obj, self.user)
+
+    def test_remaining_action_error_paths(self):
+        registry = MagicMock()
+        registry.is_registered.side_effect = ActionExecutionError("failed")
+        with (
+            patch("django_workflow_engine.action_registry.registry", registry),
+            patch(
+                "django_workflow_engine.services._execute_action_function_legacy",
+                return_value="legacy",
+            ) as legacy,
+        ):
+            self.assertEqual(execute_action_function("action", {}), "legacy")
+            legacy.assert_called_once()
+            with self.assertRaises(ActionExecutionError):
+                execute_action_function("action", {}, raise_exceptions=True)
+
+        with self.assertRaises(ImportError):
+            _execute_action_function_legacy(
+                "missing_package.action", {}, raise_exceptions=True
+            )
+        self.assertIsNone(_execute_action_function_legacy("math.missing", {}))
+        with self.assertRaises(AttributeError):
+            _execute_action_function_legacy("math.missing", {}, raise_exceptions=True)
+
+    def test_assigned_and_fallback_detailed_workflow_displays(self):
+        approvals = [
+            {
+                "approval_type": "assigned",
+                "role_selection_strategy": "consensus",
+            },
+            {"approval_type": "custom"},
+        ]
+        stage = SimpleNamespace(
+            id=1,
+            name_en="Stage",
+            name_ar="Stage",
+            order=1,
+            is_active=True,
+            stage_info={"approvals": approvals},
+            created_at=None,
+            modified_at=None,
+        )
+        pipeline = SimpleNamespace(
+            id=1,
+            name_en="Pipeline",
+            name_ar="Pipeline",
+            order=1,
+            department_name=None,
+            stages=SimpleNamespace(all=lambda: [stage]),
+            created_at=None,
+            modified_at=None,
+        )
+        workflow = SimpleNamespace(
+            id=1,
+            name_en="Workflow",
+            name_ar="Workflow",
+            company=None,
+            is_active=True,
+            description="",
+            created_at=None,
+            modified_at=None,
+            pipelines=SimpleNamespace(all=lambda: [pipeline]),
+        )
+        result = _build_detailed_workflow_dict(workflow)
+        enriched = result["pipelines"][0]["stages"][0]["approval_configuration"][
+            "approvals"
+        ]
+        self.assertEqual(enriched[0]["approval_type_display"], "Assigned User Approval")
+        self.assertEqual(
+            enriched[0]["strategy_display"], "All users with role must approve"
+        )
+        self.assertEqual(enriched[1]["approval_type_display"], "custom")
 
         lookups = {
             "amount": self.obj.amount,

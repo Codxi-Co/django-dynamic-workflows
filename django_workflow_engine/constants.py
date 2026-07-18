@@ -26,6 +26,7 @@ APPROVAL_TYPE_DISPLAY = {
     ApprovalTypes.SELF: _("Self Approval"),
     ApprovalTypes.TEAM_HEAD: _("Team Head Approval"),
     ApprovalTypes.DEPARTMENT_HEAD: _("Department Head Approval"),
+    ApprovalTypes.ASSIGNED: _("Assigned User Approval"),
 }
 
 # Role selection strategy display names for UI/serialization

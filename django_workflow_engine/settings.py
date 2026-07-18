@@ -298,6 +298,28 @@ def get_transition_actor_settings(model_or_obj=None):
     return resolved
 
 
+def get_assignment_resolvers(model_or_obj=None):
+    """Return the exact-model resolver, falling back to ``default``."""
+    configuration = get_workflow_settings().get("ASSIGNMENT_RESOLVERS", {})
+    if not configuration or not model_or_obj:
+        return configuration
+    if isinstance(model_or_obj, str):
+        model_string = model_or_obj
+    else:
+        model_string = model_or_obj._meta.label
+    model_config = configuration.get(model_string)
+    if model_config is None:
+        model_config = next(
+            (
+                value
+                for key, value in configuration.items()
+                if key != "default" and key.lower() == model_string.lower()
+            ),
+            None,
+        )
+    return model_config or configuration.get("default", {})
+
+
 def get_default_status_workflows():
     """Return model-specific default status workflow definitions."""
     return get_workflow_settings().get("DEFAULT_STATUS_WORKFLOWS", {})
@@ -464,6 +486,20 @@ def validate_workflow_settings():
             if not isinstance(configuration, dict):
                 raise ImproperlyConfigured(f"TRANSITION_ACTORS['{key}'] must be a dict")
 
+    assignment_resolvers = workflow_settings.get("ASSIGNMENT_RESOLVERS", {})
+    if not isinstance(assignment_resolvers, dict):
+        raise ImproperlyConfigured(
+            "DJANGO_WORKFLOW_ENGINE['ASSIGNMENT_RESOLVERS'] must be a dict"
+        )
+    for key, configuration in assignment_resolvers.items():
+        if key != "default" and (not isinstance(key, str) or "." not in key):
+            raise ImproperlyConfigured(
+                f"Invalid key '{key}' in ASSIGNMENT_RESOLVERS. "
+                "Format should be 'app_label.ModelName' or 'default'"
+            )
+        if not isinstance(configuration, dict):
+            raise ImproperlyConfigured(f"ASSIGNMENT_RESOLVERS['{key}'] must be a dict")
+
 
 # Default settings template for documentation
 DEFAULT_SETTINGS = {
@@ -534,6 +570,11 @@ DEFAULT_SETTINGS = {
         # "tasks.Task": {
         #     "ASSIGNED_USER_FIELD": "assignee",
         # },
+    },
+    "ASSIGNMENT_RESOLVERS": {
+        # "tasks.Task": {
+        #     "field": "assignee",
+        # }
     },
 }
 

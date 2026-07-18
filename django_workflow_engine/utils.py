@@ -15,6 +15,7 @@ from django.db.models import Model
 
 from approval_workflow.choices import ApprovalType, RoleSelectionStrategy
 
+from .assignment import resolve_assigned_user
 from .choices import ApprovalTypes, WorkflowStrategy
 from .constants import ERROR_MESSAGES
 
@@ -190,7 +191,10 @@ def get_workflow_stage_approvers(stage, created_by_user: User) -> List[Dict[str,
 
 
 def build_approval_steps(
-    stage, created_by_user: Optional[User], start_step: int = 1
+    stage,
+    created_by_user: Optional[User],
+    start_step: int = 1,
+    obj: Optional[Model] = None,
 ) -> List[Dict[str, Any]]:
     """Build approval steps for a workflow with strategy-aware approval extraction.
 
@@ -404,7 +408,12 @@ def build_approval_steps(
 
         approval_type = approval_data.get("approval_type", ApprovalTypes.SELF)
 
-        if approval_type in (
+        if approval_type == ApprovalTypes.ASSIGNED:
+            step["assigned_to"] = resolve_assigned_user(
+                obj, approval_data, created_by_user
+            )
+
+        elif approval_type in (
             ApprovalTypes.SELF,
             ApprovalTypes.USER,
         ) or approval_data.get("approval_user"):
@@ -972,6 +981,7 @@ def build_approval_steps_from_config(
     approval_user: Optional[User],
     extra_fields: Dict[str, Any] = None,
     start_step: int = 1,
+    obj: Optional[Model] = None,
 ) -> List[Dict[str, Any]]:
     """Build approval steps from approval configuration (for strategies 2 and 3).
 
@@ -1006,12 +1016,18 @@ def build_approval_steps_from_config(
             "extra_fields": extra_fields.copy() if extra_fields else {},
         }
 
-        approval_type = approval_data.get("approval_type", "self-approved")
+        approval_type = approval_data.get("approval_type", ApprovalTypes.SELF)
 
         # Handle user-based approvals
-        if approval_type in ("self-approved", "user") or approval_data.get(
-            "approval_user"
-        ):
+        if approval_type == ApprovalTypes.ASSIGNED:
+            step["assigned_to"] = resolve_assigned_user(
+                obj, approval_data, approval_user
+            )
+
+        elif approval_type in (
+            ApprovalTypes.SELF,
+            ApprovalTypes.USER,
+        ) or approval_data.get("approval_user"):
             approval_user_data = approval_data.get("approval_user", approval_user)
             if isinstance(approval_user_data, int):
                 try:
@@ -1019,10 +1035,10 @@ def build_approval_steps_from_config(
                 except UserModel.DoesNotExist:
                     step["assigned_to"] = approval_user
             else:
-                step["assigned_to"] = approval_user
+                step["assigned_to"] = approval_user_data or approval_user
 
         # Handle role-based approvals
-        elif approval_type == "role" and approval_data.get("user_role"):
+        elif approval_type == ApprovalTypes.ROLE and approval_data.get("user_role"):
             try:
                 role_model_path = getattr(
                     settings, "APPROVAL_ROLE_MODEL", "common.Role"

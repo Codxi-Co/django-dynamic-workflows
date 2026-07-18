@@ -593,7 +593,7 @@ class WorkflowApprovalSerializer(serializers.Serializer):
             if created_by and not isinstance(created_by, User):
                 created_by = User.objects.get(pk=created_by)
 
-            builder = ApprovalStepBuilder(stage, created_by)
+            builder = ApprovalStepBuilder(stage, created_by, obj=self.instance)
             # Pass start_step to continue numbering from current position
             resubmission_steps = builder.build_steps(start_step=start_step)
 
@@ -1173,6 +1173,8 @@ class StageDetailSerializer(serializers.ModelSerializer):
                 enriched_approval["approval_type_display"] = "User-specific Approval"
             elif approval_type == ApprovalTypes.SELF:
                 enriched_approval["approval_type_display"] = "Self Approval"
+            elif approval_type == ApprovalTypes.ASSIGNED:
+                enriched_approval["approval_type_display"] = "Assigned User Approval"
             else:
                 enriched_approval["approval_type_display"] = approval_type
 
@@ -1743,27 +1745,23 @@ class StageSerializer(serializers.ModelSerializer):
         if not isinstance(approvals, list):
             raise serializers.ValidationError("approvals must be a list")
 
-        # Normalize approval_type to lowercase for case-insensitive comparison
         valid_approval_types = [choice[0].lower() for choice in ApprovalTypes.choices]
 
         for approval in approvals:
             if not isinstance(approval, dict):
                 raise serializers.ValidationError("Each approval must be a dictionary")
 
-            approval_type = approval.get("approval_type", "").lower()
-
-            # Normalize to lowercase in the data
-            if approval_type:
-                approval["approval_type"] = approval_type
-
+            approval_type = str(approval.get("approval_type", "")).lower()
             if approval_type not in valid_approval_types:
                 raise serializers.ValidationError(
                     f"Invalid approval_type: {approval.get('approval_type')}. "
-                    f"Must be one of: role, user, self (case-insensitive)"
+                    f"Must be one of: {', '.join(valid_approval_types)} "
+                    "(case-insensitive)"
                 )
+            approval["approval_type"] = approval_type
 
             # Validate role-based approval
-            if approval_type == ApprovalTypes.ROLE.lower():
+            if approval_type == ApprovalTypes.ROLE:
                 if "user_role" not in approval:
                     raise serializers.ValidationError(
                         "user_role is required for ROLE approval type"
@@ -1785,8 +1783,8 @@ class StageSerializer(serializers.ModelSerializer):
                     )
 
             # Validate user-based approval
-            elif approval_type == ApprovalTypes.USER.lower():
-                if "approval_user" not in approval:
+            elif approval_type == ApprovalTypes.USER:
+                if not approval.get("approval_user"):
                     raise serializers.ValidationError(
                         "approval_user is required for USER approval type"
                     )

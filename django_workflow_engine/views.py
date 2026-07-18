@@ -1160,6 +1160,7 @@ class WorkFlowViewSet(viewsets.ReadOnlyModelViewSet):
                     ApprovalTypes.ROLE: 0,
                     ApprovalTypes.USER: 0,
                     ApprovalTypes.SELF: 0,
+                    ApprovalTypes.ASSIGNED: 0,
                 }
                 for approval in approvals:
                     approval_type = approval.get("approval_type", "")
@@ -1216,6 +1217,7 @@ class WorkFlowViewSet(viewsets.ReadOnlyModelViewSet):
                 ApprovalTypes.ROLE: 0,
                 ApprovalTypes.USER: 0,
                 ApprovalTypes.SELF: 0,
+                ApprovalTypes.ASSIGNED: 0,
             },
             "by_strategy": {
                 RoleSelectionStrategy.ANYONE: 0,

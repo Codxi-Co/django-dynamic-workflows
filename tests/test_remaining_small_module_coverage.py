@@ -13,7 +13,11 @@ from django.db.models import Q
 from django.test import TestCase, override_settings
 from django.test.client import RequestFactory
 
-from django_workflow_engine import action_handlers, enhanced_logging
+from django_workflow_engine import (
+    _patch_role_selection_strategy_compat,
+    action_handlers,
+    enhanced_logging,
+)
 from django_workflow_engine.action_executor import (
     _execute_action_securely,
     execute_custom_action,
@@ -76,6 +80,13 @@ def discover_test_handler(instance):
 
 
 class SmallPureBranchCoverageTest(TestCase):
+    def test_role_strategy_compatibility_patch_adds_missing_names(self):
+        fake_strategy = SimpleNamespace()
+        fake_choices = SimpleNamespace(RoleSelectionStrategy=fake_strategy)
+        with patch.dict(sys.modules, {"approval_workflow.choices": fake_choices}):
+            _patch_role_selection_strategy_compat()
+        self.assertEqual(fake_strategy.QUORUM, "quorum")
+
     def test_example_action_handlers_log_and_return_false(self):
         handlers = [
             action_handlers.send_approval_notification,

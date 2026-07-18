@@ -421,6 +421,37 @@ class RemainingSerializerCoverageTest(TestCase):
         ):
             serializer._prepare_resubmission_steps({"stage_id": 5})
 
+        serializer.instance = SimpleNamespace(
+            pk=3,
+            _meta=SimpleNamespace(label="tests.Target"),
+        )
+        with (
+            patch(
+                "django_workflow_engine.serializers.Stage.objects.select_related",
+                return_value=manager,
+            ),
+            patch(
+                "django_workflow_engine.serializers.get_current_approval_for_object",
+                return_value=SimpleNamespace(step_number=2),
+            ),
+            patch(
+                "django_workflow_engine.handlers.ApprovalStepBuilder",
+                return_value=builder,
+            ),
+        ):
+            serializer._prepare_resubmission_steps({"stage_id": 5})
+
+    def test_assigned_approval_display(self):
+        serializer = StageDetailSerializer()
+        result = serializer.get_approval_configuration(
+            SimpleNamespace(
+                stage_info={"approvals": [{"approval_type": ApprovalTypes.ASSIGNED}]}
+            )
+        )
+        self.assertEqual(
+            result["approvals"][0]["approval_type_display"], "Assigned User Approval"
+        )
+
     def test_save_enriches_form_from_iterable_approval(self):
         serializer = WorkflowApprovalSerializer(
             instance=self.instance,

@@ -13,7 +13,8 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 - **Settings-Based Actions**: Configure project-wide actions via `WORKFLOW_ACTIONS_CONFIG`
 - **Action Inheritance**: Stage → Pipeline → Workflow action hierarchy
 - **Approval Flow Integration**: Built on top of django-approval-workflow package
-- **Approval Type Support**: Control approval behavior with APPROVE, SUBMIT, CHECK_IN_VERIFY, and MOVE types
+- **Assigned Approval Type**: Resolve the assigned approver from a target field, assignment model/query, or resolver function
+- **Approval Step Behavior**: Control behavior with APPROVE, SUBMIT, CHECK_IN_VERIFY, and MOVE types
 - **Complete Approval Actions**: Full support for approve, reject, delegate, and resubmission workflows
 - **Resubmission & Delegation Logic**: Proper stage transitions and user assignments with workflow event triggers
 - **Configurable Triggers**: Actions triggered on workflow events (approve, reject, delegate, etc.)
@@ -21,6 +22,25 @@ A powerful, configurable Django package for implementing dynamic multi-step work
 - **Dynamic Function Execution**: Execute Python functions by database-stored paths
 - **Workflow Cleanup & Management**: Built-in cleanup utilities to manage completed workflows and reduce database size
 - **Admin Interface**: Rich Django admin for managing workflows, stages, and actions
+
+## Documentation
+
+Start with the guide for your role:
+
+| Guide | Use it for |
+| --- | --- |
+| [Developer Guide](docs/DEVELOPER_GUIDE.md) | installation, architecture, workflow strategies, assignee resolution, services, settings, actions, and testing |
+| [Frontend Integration](docs/FRONTEND_INTEGRATION.md) | endpoints, payloads, approval controls, status diagrams, errors, and UI release checks |
+
+Specialized references:
+
+- [Business Status Workflows](docs/STATUS_WORKFLOWS.md)
+- [Status Workflow API](docs/STATUS_WORKFLOW_API.md)
+- [Role Strategies](docs/ROLE_STRATEGIES.md)
+- [Custom Actions](docs/CUSTOM_ACTIONS.md)
+- [Migration Guide](docs/MIGRATION_GUIDE.md)
+- [Email Testing](docs/TESTING_EMAILS.md)
+- [Changelog](docs/CHANGELOG.md) — the single source for release history
 
 ## Installation
 
@@ -726,11 +746,11 @@ create_status_flow_design(
 - Task boards and operational queues
 - Any workflow where one status can have multiple allowed next actions
 
-For the complete guide, including REST APIs, helpers, approval forms, frontend diagram payloads, and settings customization, see **[STATUS_WORKFLOWS_GUIDE.md](STATUS_WORKFLOWS_GUIDE.md)**.
+For the complete guide, including REST APIs, helpers, approval forms, frontend diagram payloads, and settings customization, see the **[Business Status Workflows guide](docs/STATUS_WORKFLOWS.md)**.
 
 For complete implementation examples covering standard support, L1/L2/L3
 escalation, and site-visit tickets, see
-**[STATUS_WORKFLOW_IMPLEMENTATION_CASES.md](STATUS_WORKFLOW_IMPLEMENTATION_CASES.md)**.
+See the ticket and status examples in the **[Status Workflow API guide](docs/STATUS_WORKFLOW_API.md)**.
 The guide also covers direct `DEFAULT_STATUS_WORKFLOWS` designs and idempotent
 company provisioning with `auto_generate_default_flow(company_id, flow=None)`.
 
@@ -1117,10 +1137,10 @@ Transitions use the same approval format as the existing approval system:
 
 If `approvals` is empty, missing, or `null`, the transition does not require approval. If it has values, the engine creates or extends `ApprovalFlow` and stores transition metadata in `ApprovalInstance.extra_fields`.
 
-Read the full implementation guide: **[STATUS_WORKFLOWS_GUIDE.md](STATUS_WORKFLOWS_GUIDE.md)**.
+Read the full implementation guide: **[Business Status Workflows](docs/STATUS_WORKFLOWS.md)**.
 
 Business-case implementation examples:
-**[STATUS_WORKFLOW_IMPLEMENTATION_CASES.md](STATUS_WORKFLOW_IMPLEMENTATION_CASES.md)**.
+See also the **[Status Workflow API guide](docs/STATUS_WORKFLOW_API.md)**.
 
 ### Best Practices
 
@@ -1241,11 +1261,10 @@ from approval_workflow.choices import RoleSelectionStrategy
 
 ### 📚 Comprehensive Guides
 
-- **Status Workflows**: Status models, APIs, approvals, permissions, and diagrams: **[STATUS_WORKFLOWS_GUIDE.md](STATUS_WORKFLOWS_GUIDE.md)**
-- **Ticket Implementation Cases**: Standard support, tiered escalation, and site-visit workflow examples: **[STATUS_WORKFLOW_IMPLEMENTATION_CASES.md](STATUS_WORKFLOW_IMPLEMENTATION_CASES.md)**
-- **Status Workflow APIs**: API-only setup and runtime examples for all ticket cases: **[STATUS_WORKFLOW_API_GUIDE.md](STATUS_WORKFLOW_API_GUIDE.md)**
-- **Custom Actions**: For complete documentation including advanced examples, conflict resolution, and best practices, see: **[CUSTOM_ACTIONS_README.md](CUSTOM_ACTIONS_README.md)**
-- **Approval Types**: For detailed information on approval behavior types (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE), see: **[APPROVAL_TYPE_INTEGRATION_GUIDE.md](APPROVAL_TYPE_INTEGRATION_GUIDE.md)**
+- **Status Workflows**: Status models, approvals, permissions, and diagrams: **[Business Status Workflows](docs/STATUS_WORKFLOWS.md)**
+- **Status Workflow APIs**: API setup and runtime examples: **[Status Workflow API](docs/STATUS_WORKFLOW_API.md)**
+- **Custom Actions**: Advanced examples, conflict resolution, and best practices: **[Custom Actions](docs/CUSTOM_ACTIONS.md)**
+- **Assignees and Step Types**: Assignment fields/models/functions plus APPROVE, SUBMIT, CHECK_IN_VERIFY, and MOVE: **[Developer Guide](docs/DEVELOPER_GUIDE.md#configure-an-approval-step)**
 
 ## Complete Example: Purchase Request Workflow
 

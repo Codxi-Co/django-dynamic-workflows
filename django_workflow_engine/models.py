@@ -822,25 +822,20 @@ class Stage(CompanyBaseWithNamedModelWithClone):
         if not isinstance(approval_config, dict):
             return False
 
-        approval_type = approval_config.get("approval_type")
-        if not approval_type:
+        if not approval_config.get("approval_type"):
             return False
 
-        # Get valid approval types from enum
+        approval_type = approval_config["approval_type"]
         valid_types = [choice[0] for choice in ApprovalTypes.choices]
         if approval_type not in valid_types:
             return False
 
-        # Validate based on an approval type
         if approval_type == ApprovalTypes.ROLE and not approval_config.get("user_role"):
             return False
         elif approval_type == ApprovalTypes.USER and not approval_config.get(
             "approval_user"
         ):
             return False
-        elif approval_type == ApprovalTypes.SELF:
-            # Self-approved doesn't require additional fields
-            pass
 
         # Validate step_approval_type if provided (APPROVE, SUBMIT, CHECK_IN_VERIFY, MOVE)
         step_approval_type = approval_config.get("step_approval_type")

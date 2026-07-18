@@ -719,7 +719,7 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
     steps = []
     if strategy == WorkflowStrategy.WORKFLOW_PIPELINE_STAGE:
         # Strategy 1: Build steps from stage
-        steps = build_approval_steps(first_stage, approval_user)
+        steps = build_approval_steps(first_stage, approval_user, obj=obj)
         location = f"stage '{first_stage.name_en}'"
     elif strategy == WorkflowStrategy.WORKFLOW_PIPELINE:
         # Strategy 2: Build steps from pipeline (extract directly from pipeline_info)
@@ -733,6 +733,7 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
             approval_user=approval_user,
             extra_fields={"pipeline_id": first_pipeline.id},
             start_step=1,
+            obj=obj,
         )
 
         location = f"pipeline '{first_pipeline.name_en}'"
@@ -748,6 +749,7 @@ def start_workflow_for_object(obj: Model, user: User = None) -> WorkflowAttachme
             approval_user=approval_user,
             extra_fields={"workflow_id": attachment.workflow.id},
             start_step=1,
+            obj=obj,
         )
 
         location = f"workflow '{attachment.workflow.name_en}'"
@@ -898,7 +900,7 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
         from .utils import build_approval_steps, get_user_for_approval
 
         approval_user = get_user_for_approval(obj, user, attachment)
-        steps = build_approval_steps(next_stage, approval_user)
+        steps = build_approval_steps(next_stage, approval_user, obj=obj)
 
         if steps:
             content_type = ContentType.objects.get_for_model(obj)
@@ -988,6 +990,7 @@ def move_to_next_stage(obj: Model, user: User = None) -> WorkflowAttachment:
             approval_user=approval_user,
             extra_fields={"pipeline_id": next_pipeline.id},
             start_step=1,  # Will be adjusted below with max_step
+            obj=obj,
         )
 
         if steps:
@@ -1632,6 +1635,7 @@ def perform_transition(
                     "to_status_id": transition.to_status.status_id,
                 },
                 start_step=start_step,
+                obj=obj,
             )
             if steps:
                 if approval_flow:
@@ -2467,6 +2471,10 @@ def _build_detailed_workflow_dict(workflow: WorkFlow) -> Dict[str, Any]:
                     )
                 elif approval_type == ApprovalTypes.SELF:
                     enriched_approval["approval_type_display"] = "Self Approval"
+                elif approval_type == ApprovalTypes.ASSIGNED:
+                    enriched_approval["approval_type_display"] = (
+                        "Assigned User Approval"
+                    )
                 else:
                     enriched_approval["approval_type_display"] = approval_type
 
@@ -2599,6 +2607,7 @@ def _build_pipeline_structure_dict(workflow: WorkFlow) -> Dict[str, Any]:
                 ApprovalTypes.ROLE: 0,
                 ApprovalTypes.USER: 0,
                 ApprovalTypes.SELF: 0,
+                ApprovalTypes.ASSIGNED: 0,
             }
             for approval in approvals:
                 approval_type = approval.get("approval_type", "")
@@ -2652,6 +2661,7 @@ def _build_approval_summary_dict(workflow: WorkFlow) -> Dict[str, Any]:
             ApprovalTypes.ROLE: 0,
             ApprovalTypes.USER: 0,
             ApprovalTypes.SELF: 0,
+            ApprovalTypes.ASSIGNED: 0,
         },
         "by_strategy": {
             RoleSelectionStrategy.ANYONE: 0,

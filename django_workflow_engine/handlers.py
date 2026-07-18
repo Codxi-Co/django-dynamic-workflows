@@ -198,7 +198,7 @@ def get_handler_for_instance(
 class ApprovalStepBuilder:
     """Helper class for building approval steps from stage configurations."""
 
-    def __init__(self, stage, created_by_user):
+    def __init__(self, stage, created_by_user, obj=None):
         """Initialize the builder.
 
         Args:
@@ -207,6 +207,7 @@ class ApprovalStepBuilder:
         """
         self.stage = stage
         self.created_by_user = created_by_user
+        self.obj = obj
 
     def build_steps(self, start_step: int = 1) -> List[Dict[str, Any]]:
         """Build approval steps for the stage.
@@ -221,7 +222,10 @@ class ApprovalStepBuilder:
         from .utils import build_approval_steps
 
         return build_approval_steps(
-            self.stage, self.created_by_user, start_step=start_step
+            self.stage,
+            self.created_by_user,
+            start_step=start_step,
+            obj=self.obj,
         )
 
 

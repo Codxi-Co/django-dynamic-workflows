@@ -112,7 +112,7 @@ class StrategyHandlersCoverageTest(TestCase):
             self.assertEqual(
                 handler.build_approval_steps(self.user, start_step=5), [{"step": 1}]
             )
-        builder.assert_called_once_with(stage1, self.user, 5)
+        builder.assert_called_once_with(stage1, self.user, 5, obj=attachment.target)
 
         workflow._prefetched_objects_cache = {"pipelines": [first_pipeline]}
         first_pipeline._prefetched_objects_cache = {"stages": [stage1, stage2]}
