@@ -738,7 +738,7 @@ After completing the migration:
 
 For issues or questions:
 1. Check the main documentation: `README.md`
-2. Review improvements: `IMPROVEMENT_SUMMARY.md`
+2. Review the current behavior in [Developer Guide](DEVELOPER_GUIDE.md)
 3. Open an issue on GitHub
 4. Check existing actions in your codebase for examples
 

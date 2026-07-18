@@ -1,12 +1,41 @@
 # Changelog
 
-- Added full-design and REST support for transition actions, action conditions,
-  failure policies, custom transition validators, consistent status-entry
-  actions, and atomic status transitions.
-- Added settings-driven, idempotent default status workflow provisioning per
-  company and model, including direct full-flow settings,
-  `auto_generate_default_flow(company_id, flow=None)`, and lazy object
-  attachment helpers.
+## [Unreleased]
+
+## [1.9.0] - 2026-07-18
+
+### Added
+
+- `ApprovalTypes.ASSIGNED` for resolving an approval user from the workflow
+  target at step-creation time.
+- Per-model `ASSIGNMENT_RESOLVERS` using a dotted target field, a related
+  assignment model/query, or an importable resolver function.
+- Runtime target-object assignment resolution for every workflow strategy,
+  status-transition approvals, and resubmission steps.
+- Dedicated developer and frontend integration guides under `docs/`.
+- A production-source coverage gate with `fail_under = 100`.
+
+### Changed
+
+- Existing `approval_type` payloads and enum values remain unchanged;
+  `step_approval_type` continues to describe APPROVE/SUBMIT/CHECK_IN_VERIFY/MOVE
+  behavior.
+- Documentation and release history are centralized under `docs/`, with this
+  file as the only changelog.
+- Package metadata updated for version `1.9.0`.
+
+### Fixed
+
+- Stage-level assigned approvals now resolve the target user safely before
+  approval-flow creation.
+- Invalid `ASSIGNMENT_RESOLVERS` container types now raise Django's
+  `ImproperlyConfigured` exception consistently.
+
+### Compatibility
+
+- No database migration is required.
+- `django-approval-workflow>=0.9.0` remains compatible; the engine resolves an
+  assigned approval to the existing `assigned_to` step contract.
 
 All notable changes to django-dynamic-workflows will be documented in this file.
 

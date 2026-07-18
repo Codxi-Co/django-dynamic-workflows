@@ -436,7 +436,7 @@ You do not have to use the packaged APIs. You can create a full status workflow 
 
 For company-specific default workflow provisioning, settings factories, lazy
 attachment, and recommended company-creation trigger points, see
-**[STATUS_WORKFLOW_IMPLEMENTATION_CASES.md](STATUS_WORKFLOW_IMPLEMENTATION_CASES.md#2-default-workflow-per-company)**.
+See the provisioning examples in the **[Status Workflow API guide](STATUS_WORKFLOW_API.md)**.
 
 ```python
 from django_workflow_engine.status_services import create_status_flow_design
