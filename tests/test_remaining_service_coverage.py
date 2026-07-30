@@ -592,6 +592,9 @@ class RemainingServiceCoverageTest(TestCase):
                 ):
                     with self.assertRaises(ValueError):
                         operation(self.obj, self.user)
+                    WorkflowAttachment.objects.select_for_update.assert_called_once_with(
+                        of=("self",)
+                    )
 
     def test_remaining_action_error_paths(self):
         registry = MagicMock()

@@ -2,6 +2,22 @@
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-07-30
+
+### Changed
+
+- `approve_pending_transition` and `reject_pending_transition` now scope their
+  `FOR UPDATE` lock to the workflow attachment row only via
+  `select_for_update(of=("self",))`, instead of also locking the joined
+  pending-transition row. This reduces lock contention and deadlock risk under
+  concurrent approvals/rejections.
+
+### Compatibility
+
+- No database migration is required.
+- Relies on `FOR UPDATE OF`, supported by PostgreSQL and MySQL. Backends without
+  this support (notably MariaDB) are incompatible with these two operations.
+
 ## [1.9.0] - 2026-07-18
 
 ### Added

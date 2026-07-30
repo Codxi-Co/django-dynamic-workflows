@@ -1673,7 +1673,7 @@ def approve_pending_transition(
     if not attachment or not attachment.pending_transition:
         raise ValueError("No pending transition found")
     attachment = (
-        WorkflowAttachment.objects.select_for_update()
+        WorkflowAttachment.objects.select_for_update(of=("self",))
         .select_related("pending_transition")
         .get(pk=attachment.pk)
     )
@@ -1711,7 +1711,7 @@ def reject_pending_transition(
     if not attachment or not attachment.pending_transition:
         raise ValueError("No pending transition found")
     attachment = (
-        WorkflowAttachment.objects.select_for_update()
+        WorkflowAttachment.objects.select_for_update(of=("self",))
         .select_related("pending_transition")
         .get(pk=attachment.pk)
     )
